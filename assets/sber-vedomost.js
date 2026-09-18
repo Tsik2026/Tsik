@@ -194,7 +194,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay16</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay17</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -269,6 +269,10 @@ const TPL = `
 
 <div class="card hide" id="sbv-tablecard">
   <h3><span class="num">3</span>Ведомость — проверьте и поправьте вручную</h3>
+  <div class="btnrow" style="margin-top:0">
+    <select id="sbv-treg" style="flex:1;min-width:170px"><option value="">— открыть список из реестра для правки —</option></select>
+    <label class="filebtn"><input type="file" id="sbv-tfile" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" class="ghost" id="sbv-tpick">Загрузить файл (распознавание + Excel)</button></label>
+  </div>
   <div class="tablewrap"><table>
     <thead><tr><th>№</th><th>Счёт (20 цифр)</th><th>Фамилия</th><th>Имя</th><th>Отчество</th><th>Сумма</th><th>Удержания</th><th></th></tr></thead>
     <tbody id="sbv-tbody"></tbody>
@@ -630,6 +634,14 @@ async function onMasterFile(file){
   }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
 }
 
+function fillTRegSelect(){
+  const sel = document.getElementById("sbv-treg");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— открыть список из реестра для правки —</option>' +
+    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел.</option>`).join("");
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
 function fillExpRegSelect(){
   const sel = document.getElementById("sbv-expreg");
   if (!sel) return;
@@ -765,6 +777,7 @@ function renderReg(){
   card.classList.remove("hide");
   fillUikRegSelect();
   fillExpRegSelect();
+  fillTRegSelect();
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
@@ -916,6 +929,9 @@ export function mount(el){
     if (d){ saveReg(loadReg().filter(x2 => x2.id !== +d.dataset.rdel)); renderReg(); }
   });
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  document.getElementById("sbv-tpick").onclick = () => document.getElementById("sbv-tfile").click();
+  document.getElementById("sbv-tfile").onchange = e => { const f = e.target.files[0]; if (f) onFile(f); };
+  document.getElementById("sbv-treg").onchange = e => { if (e.target.value) restoreReg(+e.target.value); };
   document.getElementById("sbv-mpick").onclick = () => document.getElementById("sbv-mfile").click();
   document.getElementById("sbv-mfile").onchange = e => { const f = e.target.files[0]; if (f) onMasterFile(f); };
   document.getElementById("sbv-mname").oninput = e => { M.name = e.target.value; saveMaster(); };
@@ -1040,7 +1056,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay16";
+  window.__sbvdmV = "sberpay17";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
