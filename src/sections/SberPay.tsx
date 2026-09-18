@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay12';
+const VER = 'sberpay15';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -391,6 +391,7 @@ export default function SberPay() {
       setHeaders(hdrs); setMatrix(mtx); setMapping(mp); setFileName(file.name); setCheck(null);
       setInfo(`${file.name} · ${mtx.length} строк${ocr ? ' · OCR (сверьте вручную)' : ''}`);
       applyMapping(hdrs, mtx, mp);
+      setTimeout(() => void autoExcelSave(file.name), 600);
     } catch (e) {
       setInfo('Ошибка чтения: ' + (e instanceof Error ? e.message : String(e)));
     }
@@ -538,6 +539,23 @@ export default function SberPay() {
   }
 
   // ── Экспорт ────────────────────────────────────────────────────────
+  async function autoExcelSave(nm0?: string) {
+    if (!rows.length) return;
+    const XLSX = await loadXlsx();
+    const nm = (nm0 || fileName || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
+    const ws = XLSX.utils.aoa_to_sheet([HEADER, ...rows.map((r) => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])]);
+    const range = XLSX.utils.decode_range(ws['!ref']!);
+    for (let r = 1; r <= range.e.r; r++) {
+      const acc = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+      if (acc) acc.z = '@';
+      for (const c of [4, 5]) { const cell = ws[XLSX.utils.encode_cell({ r, c })]; if (cell && typeof cell.v === 'number') cell.z = '#,##0.00'; }
+    }
+    ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ведомость');
+    download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  }
+
   function guard(): boolean {
     if (totals.bad) { alert(`В ведомости ${totals.bad} строк с ошибками (красные). Исправьте счёт/фамилию/сумму — банк такой файл не примет.`); return false; }
     if (!rows.length) { alert('Ведомость пустая.'); return false; }
