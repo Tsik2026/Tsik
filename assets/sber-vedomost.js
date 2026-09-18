@@ -334,7 +334,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay23</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay24</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -425,6 +425,8 @@ const TPL = `
     <button type="button" class="ghost" id="sbv-add">+ Строка</button>
     <button type="button" class="ghost hide" id="sbv-mmerge">Подставить из общего списка</button>
     <button type="button" class="ghost" id="sbv-copy">Копировать итоги</button>
+    <button type="button" id="sbv-save">Сохранить</button>
+    <button type="button" class="warnb" id="sbv-del">Удалить</button>
     <button type="button" class="warnb hide" id="sbv-clear">Очистить всё</button>
   </div>
   <div class="totals" id="sbv-totals"></div>
@@ -774,6 +776,38 @@ function mergeFromMaster(){
   renderTable();
   document.getElementById("sbv-fileinfo").textContent = "Подставлено из общего списка: " + filled + " значений (по совпадению ФИО).";
 }
+function saveCurrentVed(){
+  if (!S.rows.length){ alert("Ведомость пустая — нечего сохранять."); return; }
+  let name = S.fileName || "";
+  if (!name){
+    name = prompt("Название для сохранения в реестре:", "Ведомость " + new Date().toLocaleDateString("ru-RU")) || "";
+    if (!name) return;
+    S.fileName = name;
+  }
+  const t = totals();
+  const reg = loadReg();
+  const ex = reg.find(e => e.name === name);
+  const entry = { id: ex ? ex.id : Date.now(), name, date: new Date().toLocaleString("ru-RU"),
+    kind: S.kind || "table", rows: S.rows.map(r => { const { __sci, ...rest } = r; return rest; }),
+    count: S.rows.length, sum: t.sum.toFixed(2), bad: t.bad };
+  const next = ex ? reg.map(e => e.id === ex.id ? entry : e) : [entry, ...reg];
+  saveReg(next); renderReg();
+  document.getElementById("sbv-fileinfo").textContent = (ex ? "Запись обновлена" : "Сохранено в реестр") + `: «${name}» · ${entry.count} чел. · ${entry.sum} ₽`;
+}
+function deleteCurrentVed(){
+  if (!S.rows.length && !S.fileName){ alert("Нечего удалять."); return; }
+  if (!confirm(`Удалить текущую ведомость${S.fileName ? ` «${S.fileName}»` : ""}? Запись в реестре (если есть) тоже будет удалена.`)) return;
+  if (S.fileName){
+    const reg = loadReg().filter(e => e.name !== S.fileName);
+    if (reg.length !== loadReg().length){ saveReg(reg); renderReg(); }
+  }
+  S.rows = []; S.fileName = ""; S.appliedSum = 0;
+  document.getElementById("sbv-tablecard").classList.add("hide");
+  document.getElementById("sbv-exportcard").classList.add("hide");
+  localStorage.removeItem(DRAFT_KEY);
+  document.getElementById("sbv-fileinfo").textContent = "Ведомость удалена. Загрузите файл или откройте запись из реестра.";
+}
+
 function copySummary(){
   const t = totals();
   const txt = `Ведомость Сбербанк: получателей ${t.cnt} из ${S.rows.length}, итого ${t.sum.toFixed(2)} ₽` + (t.bad ? `, ошибок: ${t.bad}` : " — готово к выгрузке");
@@ -1228,6 +1262,8 @@ export function mount(el){
   dz.addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) onFile(f); });
   document.getElementById("sbv-mmerge").onclick = mergeFromMaster;
   document.getElementById("sbv-copy").onclick = copySummary;
+  document.getElementById("sbv-save").onclick = saveCurrentVed;
+  document.getElementById("sbv-del").onclick = deleteCurrentVed;
   document.getElementById("sbv-mpick").onclick = () => document.getElementById("sbv-mfile").click();
   document.getElementById("sbv-mfile").onchange = e => { const f = e.target.files[0]; if (f) onMasterFile(f); };
   document.getElementById("sbv-mname").oninput = e => { M.name = e.target.value; saveMaster(); };
@@ -1361,7 +1397,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay23";
+  window.__sbvdmV = "sberpay24";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
