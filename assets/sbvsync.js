@@ -95,3 +95,33 @@
   if (document.readyState === "complete") start();
   else window.addEventListener("load", start);
 })();
+
+/* ---------- автобэкап базы (фон, каждые 5 минут, без участия пользователя) ---------- */
+const BK_KEY = "komfin_autobackup_v1";
+let bkBusy = false, bkTick = 0;
+function bkSnapshot(){
+  const db = window.__db;
+  if (!db) return Promise.resolve(null);
+  const dump = { app: "komfin", format: 2, at: new Date().toISOString(), tables: {} };
+  return Promise.all(db.tables.map(t => t.toArray().then(rows => { dump.tables[t.name] = rows; }))).then(() => JSON.stringify(dump));
+}
+function bkRun(){
+  if (bkBusy) return;
+  bkBusy = true;
+  bkSnapshot().then(json => {
+    if (!json) return;
+    try { localStorage.setItem(BK_KEY, json); } catch (e) {}
+    bkTick++;
+    if (bkTick % 6 === 0) {
+      const date = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const blob = new Blob([json], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "komfin_autobackup_" + date + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+  }).catch(() => {}).finally(() => { bkBusy = false; });
+}
+setTimeout(bkRun, 90 * 1000);
+setInterval(bkRun, 5 * 60 * 1000);
