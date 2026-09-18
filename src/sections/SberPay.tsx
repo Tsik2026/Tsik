@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay21';
+const VER = 'sberpay24';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -671,6 +671,29 @@ export default function SberPay() {
     download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
 
+  async function downloadControlForm() {
+    const XLSX = await loadXlsx();
+    const aoa: unknown[][] = [
+      ["ПАО СБЕРБАНК"],
+      ["КОНТРОЛЬНАЯ ФОРМА ВЕДОМОСТИ"],
+      [],
+      ["Организация:", "", "", "№ ведомости:", "", "Дата составления:", ""],
+      ["Счёт организации:", "", "", "ИНН:", "", "КПП:", ""],
+      [],
+      ["№ п/п", "Фамилия", "Имя", "Отчество", "№ счёта получателя", "Сумма, руб.", "Подпись получателя"],
+    ];
+    for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
+    aoa.push([], ["", "", "", "", "ИТОГО:", "", ""], [], ["Сумма прописью:", "", "", "", "", "", ""], [],
+      ["Руководитель организации: _________ / ________________ /", "", "", "", "Главный бухгалтер: _________ / ________________ /", "", ""], [], ["М.П."], [],
+      ["Примечание: форма соответствует требованиям Сбербанка к оформлению ведомости на выплату (зарплатный проект)."],
+      ["Счёт получателя — 20 цифр, текстовый формат; сумма — в рублях с копейками, разделитель точка."]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 6 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Контрольная форма');
+    download(`kontrolnaya_forma_SBER_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  }
+
   function exportSourceRows(): VedRow[] {
     if (!expRegId) return rows;
     const en = registry.find((x) => x.id === expRegId);
@@ -764,6 +787,7 @@ export default function SberPay() {
         <CardHead>
           <span className="flex items-center justify-between w-full">
             Реестр загруженных файлов
+            <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => void downloadControlForm()}>Контрольная форма</button>
             <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={runCheck}>Сверка ФИО и счетов</button>
           </span>
         </CardHead>
