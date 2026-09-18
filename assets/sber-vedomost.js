@@ -194,7 +194,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay15</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay16</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -283,6 +283,9 @@ const TPL = `
 
 <div class="card hide" id="sbv-exportcard">
   <h3><span class="num">4</span>Выгрузка в Сбербанк</h3>
+  <div class="btnrow" style="margin-top:0">
+    <select id="sbv-expreg" style="flex:1;min-width:180px"><option value="0">— выгрузить текущую ведомость (после автораспознавания) —</option></select>
+  </div>
   <div class="btnrow">
     <button type="button" id="sbv-csv1251" style="font-size:15px;padding:12px 22px">⬇ Выгрузить в Сбербанк</button>
   </div>
@@ -470,12 +473,34 @@ function applyMapping(){
   renderTable();
   document.getElementById("sbv-tablecard").scrollIntoView({ behavior: "smooth", block: "start" });
 }
-function buildLines(){
-  return S.rows.map(r => [r.account, r.last, r.first, r.middle, r.amount || "0.00", r.deduct || "0.00"]);
+function buildLines(src){
+  const RR = src || S.rows;
+  return RR.map(r => [r.account, r.last, r.first, r.middle, r.amount || "0.00", r.deduct || "0.00"]);
 }
-function csvText(){
+function csvText(src){
   const q = v => { v = String(v ?? ""); return /[";\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  return [HEADER.map(q).join(";")].concat(buildLines().map(c => c.map(q).join(";"))).join("\r\n");
+  return [HEADER.map(q).join(";")].concat(buildLines(src).map(c => c.map(q).join(";"))).join("\r\n");
+}
+function exportName(){
+  const el = document.getElementById("sbv-expreg");
+  if (el && +el.value){
+    const e = loadReg().find(x => x.id === +el.value);
+    if (e) return (e.name || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 30) || "vedomost";
+  }
+  return (S.fileName || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 30) || "vedomost";
+}
+function exportRows(){
+  const el = document.getElementById("sbv-expreg");
+  const id = el ? +el.value : 0;
+  if (!id) return S.rows;
+  const e = loadReg().find(x => x.id === id);
+  return e ? (e.rows || []) : S.rows;
+}
+function guardRows(rows){
+  if (!rows.length){ alert("Ведомость пустая."); return false; }
+  let bad = 0; for (const r of rows) if (rowProblems(r).length) bad++;
+  if (bad){ alert("В выбранной ведомости " + bad + " строк с ошибками (счёт ≠ 20 цифр, пустая сумма/фамилия). Исправьте через «Правка» в реестре."); return false; }
+  return true;
 }
 function guard(){
   const t = totals();
@@ -497,11 +522,12 @@ function sheetFromRows(aoa){
   ws["!cols"] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
   return ws;
 }
-function buildLinesX(){
-  return S.rows.map(r => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0]);
+function buildLinesX(src){
+  const RR = src || S.rows;
+  return RR.map(r => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0]);
 }
-function xlsxBlob(){
-  const ws = sheetFromRows([HEADER, ...buildLinesX()]);
+function xlsxBlob(src){
+  const ws = sheetFromRows([HEADER, ...buildLinesX(src)]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Ведомость");
   return new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })],
@@ -604,6 +630,14 @@ async function onMasterFile(file){
   }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
 }
 
+function fillExpRegSelect(){
+  const sel = document.getElementById("sbv-expreg");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="0">— выгрузить текущую ведомость (после автораспознавания) —</option>' +
+    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел. · ${e.sum} ₽</option>`).join("");
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
 function fillUikRegSelect(){
   const sel = document.getElementById("sbv-uikreg");
   if (!sel) return;
@@ -730,6 +764,7 @@ function renderReg(){
   if (!reg.length){ list.innerHTML = '<div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div>'; card.classList.remove("hide"); return; }
   card.classList.remove("hide");
   fillUikRegSelect();
+  fillExpRegSelect();
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
@@ -981,16 +1016,19 @@ export function mount(el){
     S.rows.splice(+b.dataset.del, 1); renderTable();
   });
   document.getElementById("sbv-csv1251").onclick = () => {
-    if (!guard()) return;
-    download(`ved_SBER_${stamp()}.csv`, new Blob([enc1251(csvText())], { type: "application/csv;charset=windows-1251" }));
+    const rows = exportRows(); if (!guardRows(rows)) return;
+    const nm = exportName(rows);
+    download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvText(rows))], { type: "application/csv;charset=windows-1251" }));
   };
   document.getElementById("sbv-csvutf").onclick = () => {
-    if (!guard()) return;
-    download(`ved_SBER_${stamp()}.csv`, new Blob(["\uFEFF" + csvText()], { type: "application/csv;charset=utf-8" }));
+    const rows = exportRows(); if (!guardRows(rows)) return;
+    const nm = exportName(rows);
+    download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(["\uFEFF" + csvText(rows)], { type: "application/csv;charset=utf-8" }));
   };
   document.getElementById("sbv-xlsx").onclick = () => {
-    if (!guard()) return;
-    download(`ved_SBER_${stamp()}.xlsx`, xlsxBlob());
+    const rows = exportRows(); if (!guardRows(rows)) return;
+    const nm = exportName(rows);
+    download(`ved_SBER_${nm}_${stamp()}.xlsx`, xlsxBlob(rows));
   };
   document.getElementById("sbv-sample").onclick = () => {
     const ws = sheetFromRows([HEADER,
@@ -1002,7 +1040,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay15";
+  window.__sbvdmV = "sberpay16";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
