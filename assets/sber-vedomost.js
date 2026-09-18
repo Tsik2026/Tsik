@@ -308,6 +308,16 @@ const CSS = `
 .sbv .del{border:0;background:none;color:inherit;opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px}
 .sbv .delbtn{background:rgba(220,60,50,.15);color:inherit;border:1px solid rgba(220,60,50,.4)}
 .sbv .delbtn:hover{background:rgba(220,60,50,.3);opacity:1}
+.sbv-modal{position:fixed;inset:0;background:rgba(10,15,30,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px}
+.sbv-modal-box{background:var(--card-bg,#fff);color:inherit;border-radius:14px;max-width:860px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.sbv-modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid rgba(128,140,170,.3)}
+.sbv-modal-head .ghost{padding:5px 12px;font-size:12.5px}
+.sbv-modal-body{padding:12px 16px;overflow:auto;font-size:13px}
+.sbv-modal-body table.pview{border-collapse:collapse;width:100%;margin:6px 0}
+.sbv-modal-body table.pview td{border:1px solid rgba(128,140,170,.3);padding:4px 8px;vertical-align:top}
+.sbv-modal-body table.pview tr.sp td{border:0;padding:6px 0}
+.sbv-modal-body table.pview tr:first-child td{font-weight:700}
+.sbv-modal-body .mact{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid rgba(128,140,170,.25)}
 .sbv .del:hover{opacity:1}
 .sbv .totals{font-size:13.5px;font-weight:700;margin-top:10px}
 .sbv .totals .ok{color:#2e9e5b}.sbv .totals .err{color:#d33}
@@ -334,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay27</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay28</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -363,6 +373,7 @@ const TPL = `
       <option value="tik">Контрольная форма — ТИК (территориальная комиссия)</option>
     </select>
     <button type="button" id="sbv-regform">Скачать форму</button>
+    <button type="button" class="ghost" id="sbv-regview">Просмотр</button>
     <button type="button" class="ghost" id="sbv-regcheck">Сверка ФИО и счетов</button>
     <button type="button" class="ghost" id="sbv-regclear">Очистить реестр</button>
   </div>
@@ -456,6 +467,13 @@ const TPL = `
     <button type="button" class="ghost" id="sbv-sample">Скачать образец</button>
   </div>
   <div class="hint">Перед подписью в банке сверьте: количество получателей и итоговая сумма обязаны совпасть с предпросмотром в Сбер Бизнес Онлайн.</div>
+</div>
+
+<div class="sbv-modal hide" id="sbv-modal">
+  <div class="sbv-modal-box">
+    <div class="sbv-modal-head"><b id="sbv-mtitle">Просмотр</b><button type="button" class="ghost" data-mclose>Закрыть</button></div>
+    <div class="sbv-modal-body" id="sbv-mbody"></div>
+  </div>
 </div>`;
 
 /* ---------- рендер ---------- */
@@ -1060,6 +1078,7 @@ function renderReg(){
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
+      <button type="button" class="ghost" data-view="${e.id}">Открыть</button>
       <button type="button" class="ghost" data-open="${e.id}">Правка</button>
       <button type="button" class="ghost" data-send="${e.id}">Отправить</button>
       <button type="button" class="ghost" data-exp="${e.id}">Экспорт</button>
@@ -1114,42 +1133,36 @@ function autofillByTemplate(rows){
   return { rows: out, filled, tpl: t };
 }
 
-function downloadControlForm(kind){
-  kind = kind || activeTemplate();
-  if (kind === "uik" || kind === "tik"){
-    const isUik = kind === "uik";
-    const aoa = [
-      ["КОНТРОЛЬНАЯ ФОРМА"],
-      [`к ведомости на выплату вознаграждения членам ${isUik ? "участковой" : "территориальной"} избирательной комиссии`],
-      [],
-      [`${isUik ? "Участковая избирательная комиссия № ______" : "Территориальная избирательная комиссия"}`, "", "", "Наименование выборов/период:", ""],
-      ["", "", "", "Дата составления:", ""],
-      [],
-      ["№ п/п", "Фамилия, имя, отчество", "Должность", "Ставка вознаграждения, руб.", "Кол-во дней (смен)", "Сумма, руб.", "Подпись"],
-    ];
-    for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
-    aoa.push(
-      [],
-      ["", "", "", "", "ИТОГО:", "", ""],
-      [],
-      ["Сумма прописью:", "", "", "", "", "", ""],
-      [],
-      ["Председатель комиссии: _________ / ________________ /", "", "", "", "Секретарь: _________ / ________________ /", "", ""],
-      [],
-      ["М.П.", "", "", "", "", "", ""],
-      [],
-      isUik ? ["Отметка ТИК о согласовании:", "", "", "", "", "", ""] : ["Согласовано с избирательной комиссией субъекта РФ:", "", "", "", "", "", ""],
-      [],
-      ["Примечание: ставки вознаграждения — по постановлению ЦИК России (председатель — 63, заместитель и секретарь — 57, член — 45 за день работы)."],
-      ["Форма — рабочий шаблон по структуре контрольных форм, применяемых при выплате вознаграждений членам избирательных комиссий; реквизиты конкретного избирательного события заполняются вручную."]
-    );
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 16 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Контрольная форма");
-    download(`kontrolnaya_forma_${kind.toUpperCase()}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    return;
-  }
+function buildCommAoa(kind){
+  const isUik = kind === "uik";
+  const aoa = [
+    ["КОНТРОЛЬНАЯ ФОРМА"],
+    [`к ведомости на выплату вознаграждения членам ${isUik ? "участковой" : "территориальной"} избирательной комиссии`],
+    [],
+    [`${isUik ? "Участковая избирательная комиссия № ______" : "Территориальная избирательная комиссия"}`, "", "", "Наименование выборов/период:", ""],
+    ["", "", "", "Дата составления:", ""],
+    [],
+    ["№ п/п", "Фамилия, имя, отчество", "Должность", "Ставка вознаграждения, руб.", "Кол-во дней (смен)", "Сумма, руб.", "Подпись"],
+  ];
+  for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
+  aoa.push(
+    [],
+    ["", "", "", "", "ИТОГО:", "", ""],
+    [],
+    ["Сумма прописью:", "", "", "", "", "", ""],
+    [],
+    ["Председатель комиссии: _________ / ________________ /", "", "", "", "Секретарь: _________ / ________________ /", "", ""],
+    [],
+    ["М.П.", "", "", "", "", "", ""],
+    [],
+    isUik ? ["Отметка ТИК о согласовании:", "", "", "", "", "", ""] : ["Согласовано с избирательной комиссией субъекта РФ:", "", "", "", "", "", ""],
+    [],
+    ["Примечание: ставки вознаграждения — по постановлению ЦИК России (председатель — 63, заместитель и секретарь — 57, член — 45 за день работы)."],
+    ["Форма — рабочий шаблон по структуре контрольных форм, применяемых при выплате вознаграждений членам избирательных комиссий; реквизиты конкретного избирательного события заполняются вручную."]
+  );
+  return aoa;
+}
+function buildSberAoa(){
   const aoa = [
     ["ПАО СБЕРБАНК"],
     ["КОНТРОЛЬНАЯ ФОРМА ВЕДОМОСТИ"],
@@ -1173,11 +1186,78 @@ function downloadControlForm(kind){
     ["Примечание: форма соответствует требованиям Сбербанка к оформлению ведомости на выплату (зарплатный проект)."],
     ["Счёт получателя — 20 цифр, текстовый формат; сумма — в рублях с копейками, разделитель точка."]
   );
+  return aoa;
+}
+function aoaToHtml(aoa){
+  let h = '<table class="pview">';
+  for (const row of aoa){
+    const cells = row.map(c => String(c ?? ""));
+    if (!cells.some(c => c.trim())){ h += '<tr class="sp"><td colspan="7">&nbsp;</td></tr>'; continue; }
+    h += "<tr>" + cells.map(c => `<td>${esc(c) || "&nbsp;"}</td>`).join("") + "</tr>";
+  }
+  return h + "</table>";
+}
+function openViewer(title, bodyHtml){
+  document.getElementById("sbv-mtitle").textContent = title;
+  document.getElementById("sbv-mbody").innerHTML = bodyHtml;
+  document.getElementById("sbv-modal").classList.remove("hide");
+}
+function closeViewer(){ document.getElementById("sbv-modal").classList.add("hide"); }
+function downloadAoa(aoa, name){
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 6 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 20 }];
+  ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 18 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Контрольная форма");
-  download(`kontrolnaya_forma_SBER_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  download(name, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+}
+function downloadControlForm(kind){
+  kind = kind || activeTemplate();
+  downloadAoa(kind === "sber" ? buildSberAoa() : buildCommAoa(kind), `kontrolnaya_forma_${kind.toUpperCase()}_${stamp()}.xlsx`);
+}
+function previewControlForm(kind){
+  kind = kind || activeTemplate();
+  const names = { sber: "Сбербанк (ведомость)", uik: "УИК (участковая комиссия)", tik: "ТИК (территориальная комиссия)" };
+  openViewer("Контрольная форма: " + (names[kind] || kind),
+    aoaToHtml(kind === "sber" ? buildSberAoa() : buildCommAoa(kind)) +
+    `<div class="mact">
+      <button type="button" data-mdl-form="${kind}">⬇ Скачать XLSX</button>
+      <button type="button" class="ghost" data-mshare-form="${kind}">Открыть внешним приложением</button>
+    </div>`);
+}
+function previewRegEntry(id){
+  const e = regEntryRows(id);
+  if (!e) return;
+  const rows = e.rows || [];
+  let sum = 0, body = "";
+  if (rows.length){
+    body = '<table class="pview"><tr><td>№</td><td>Фамилия</td><td>Имя</td><td>Отчество</td><td>Счёт</td><td>Сумма</td><td>Удерж.</td></tr>';
+    rows.forEach((r, i) => {
+      const n = parseFloat(r.amount) || 0; sum += n;
+      body += `<tr><td>${i + 1}</td><td>${esc(r.last)}</td><td>${esc(r.first)}</td><td>${esc(r.middle)}</td><td>${esc(r.account)}</td><td>${esc(r.amount)}</td><td>${esc(r.deduct)}</td></tr>`;
+    });
+    body += "</table>";
+  } else body = "<p>Запись пустая.</p>";
+  openViewer(`Просмотр: ${e.name}`,
+    `<div class="fileinfo" style="margin-bottom:6px">${esc(e.date)} · ${rows.length} чел. · итого ${sum.toFixed(2)} ₽${e.bad ? ` · ошибок: ${e.bad}` : ""}</div>` +
+    body +
+    `<div class="mact">
+      <button type="button" data-mdl="${e.id}">⬇ Скачать XLSX</button>
+      <button type="button" class="ghost" data-mshare="${e.id}">Открыть внешним приложением</button>
+      <button type="button" class="ghost" data-medit="${e.id}">Править</button>
+    </div>`);
+}
+async function shareFormExternal(kind){
+  const aoa = kind === "sber" ? buildSberAoa() : buildCommAoa(kind);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Контрольная форма");
+  const blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const file = new File([blob], `kontrolnaya_forma_${kind.toUpperCase()}.xlsx`, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })){
+    try { await navigator.share({ files: [file], title: "Контрольная форма" }); return; } catch (err) { if (err && err.name === "AbortError") return; }
+  }
+  download(file.name, blob);
+  alert("Прямая отправка не поддерживается — файл скачан, откройте его внешним приложением.");
 }
 
 async function sendRegEntry(id){
@@ -1290,6 +1370,8 @@ export function mount(el){
     const s = e.target.closest("[data-send]");
     const x = e.target.closest("[data-exp]");
     const f = e.target.closest("[data-fmt]");
+    const v = e.target.closest("[data-view]");
+    if (v) return previewRegEntry(+v.dataset.view);
     if (f) return exportRegEntry(+f.dataset.id, f.dataset.fmt);
     if (o) return restoreReg(+o.dataset.open);
     if (s) return sendRegEntry(+s.dataset.send);
@@ -1313,6 +1395,20 @@ export function mount(el){
   fsel.value = activeTemplate();
   fsel.onchange = () => { try { localStorage.setItem(TPL_KEY, fsel.value); } catch(e){} };
   document.getElementById("sbv-regform").onclick = () => downloadControlForm(fsel.value);
+  document.getElementById("sbv-regview").onclick = () => previewControlForm(fsel.value);
+  document.getElementById("sbv-modal").addEventListener("click", e => {
+    if (e.target.id === "sbv-modal" || e.target.closest("[data-mclose]")) return closeViewer();
+    const b1 = e.target.closest("[data-mdl]");
+    const b2 = e.target.closest("[data-mshare]");
+    const b3 = e.target.closest("[data-medit]");
+    const b4 = e.target.closest("[data-mdl-form]");
+    const b5 = e.target.closest("[data-mshare-form]");
+    if (b1){ closeViewer(); return exportRegEntry(+b1.dataset.mdl, "xlsx"); }
+    if (b2){ closeViewer(); return sendRegEntry(+b2.dataset.mshare); }
+    if (b3){ closeViewer(); return restoreReg(+b3.dataset.medit); }
+    if (b4) return downloadControlForm(b4.dataset.mdlForm);
+    if (b5) return shareFormExternal(b5.dataset.mshareForm);
+  });
   document.getElementById("sbv-regclear").onclick = () => {
     const reg0 = loadReg();
     if (!reg0.length){ return; }
@@ -1466,7 +1562,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay27";
+  window.__sbvdmV = "sberpay28";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
