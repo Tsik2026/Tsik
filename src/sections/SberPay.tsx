@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay16';
+const VER = 'sberpay17';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -237,6 +237,7 @@ export default function SberPay() {
   const [manOpen, setManOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [expMenu, setExpMenu] = useState(0);
+  const [expRegId, setExpRegId] = useState(0);
   const [master, setMaster] = useState<{ name: string; rows: { fio: string; account: string; amount: string }[] }>(() => {
     try { return JSON.parse(localStorage.getItem(MASTER_KEY) || '{\"name\":\"\",\"rows\":[]}'); } catch { return { name: '', rows: [] }; }
   });
@@ -556,6 +557,11 @@ export default function SberPay() {
     download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
 
+  function exportSourceRows(): VedRow[] {
+    if (!expRegId) return rows;
+    const en = registry.find((x) => x.id === expRegId);
+    return en ? (en.rows || []) : rows;
+  }
   function guard(): boolean {
     if (totals.bad) { alert(`В ведомости ${totals.bad} строк с ошибками (красные). Исправьте счёт/фамилию/сумму — банк такой файл не примет.`); return false; }
     if (!rows.length) { alert('Ведомость пустая.'); return false; }
@@ -567,12 +573,14 @@ export default function SberPay() {
       .join('\r\n');
   }
   async function exportCsv(encoding: '1251' | 'utf8') {
-    if (!guard()) return;
+    const src = exportSourceRows();
+    if (!src.length || src.some((r) => rowProblems(r).length > 0)) { guard(); return; }
     if (encoding === '1251') download(`ved_SBER_${stamp()}.csv`, new Blob([enc1251(csvText()).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' }));
     else download(`ved_SBER_${stamp()}.csv`, new Blob(['﻿' + csvText()], { type: 'application/csv;charset=utf-8' }));
   }
   async function exportXlsx() {
-    if (!guard()) return;
+    const src = exportSourceRows();
+    if (!src.length || src.some((r) => rowProblems(r).length > 0)) { guard(); return; }
     const XLSX = await loadXlsx();
     const aoa = [HEADER, ...rows.map((r) => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -901,16 +909,20 @@ export default function SberPay() {
       )}
 
       {/* Шаг 4. Выгрузка */}
-      {rows.length > 0 && (
+      {(rows.length > 0 || registry.length > 0) && (
         <Card>
           <CardHead><Num>4</Num>Выгрузка в Сбербанк</CardHead>
+          <select value={expRegId} onChange={(e) => setExpRegId(+e.target.value)} className="w-full rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px] mb-2">
+            <option value={0}>— выгрузить текущую ведомость (после автораспознавания) —</option>
+            {registry.map((en) => <option key={en.id} value={en.id}>{en.name} · {en.count} чел. · {en.sum} ₽</option>)}
+          </select>
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={totals.bad > 0} className="rounded-lg bg-blue-600 px-5 py-3 text-[15px] font-semibold text-white disabled:opacity-45" onClick={() => exportCsv('1251')}>⬇ Выгрузить в Сбербанк</button>
+            <button type="button" disabled={exportSourceRows().length === 0 || exportSourceRows().some((r) => rowProblems(r).length > 0)} className="rounded-lg bg-blue-600 px-5 py-3 text-[15px] font-semibold text-white disabled:opacity-45" onClick={() => exportCsv('1251')}>⬇ Выгрузить в Сбербанк</button>
           </div>
           <p className="text-[12px] opacity-60 mt-2">Файл CSV (Windows-1251) в формате «Ведомость на счета» — готов к импорту: Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости.</p>
           <div className="flex flex-wrap gap-2 mt-1">
-            <button type="button" disabled={totals.bad > 0} className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold disabled:opacity-45" onClick={() => exportCsv('utf8')}>CSV UTF-8</button>
-            <button type="button" disabled={totals.bad > 0} className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold disabled:opacity-45" onClick={exportXlsx}>XLSX</button>
+            <button type="button" disabled={exportSourceRows().length === 0 || exportSourceRows().some((r) => rowProblems(r).length > 0)} className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold disabled:opacity-45" onClick={() => exportCsv('utf8')}>CSV UTF-8</button>
+            <button type="button" disabled={exportSourceRows().length === 0 || exportSourceRows().some((r) => rowProblems(r).length > 0)} className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold disabled:opacity-45" onClick={exportXlsx}>XLSX</button>
             <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={downloadSample}>Скачать образец</button>
           </div>
           <p className="text-[12px] opacity-60 mt-2">Перед подписью в банке сверьте: количество получателей и итоговая сумма обязаны совпасть с предпросмотром в Сбер Бизнес Онлайн.</p>
