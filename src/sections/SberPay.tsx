@@ -754,6 +754,44 @@ export default function SberPay() {
     setInfo('Ведомость удалена. Загрузите файл или откройте запись из реестра.');
   }
 
+  function csvTextFrom(rows: VedRow[]): string {
+    return [HEADER.map(csvEscape).join(';')]
+      .concat(rows.map((r) => [r.account, r.last, r.first, r.middle, r.amount || '0.00', r.deduct || '0.00'].map(csvEscape).join(';')))
+      .join('\r\n');
+  }
+  function exportRegEntry(e: RegEntry, fmt: string) {
+    const rows = e.rows || [];
+    if (!rows.length) { alert('В записи нет строк.'); return; }
+    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
+    if (fmt === 'csv1251') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' }));
+    else if (fmt === 'csvutf') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(['\uFEFF' + csvTextFrom(rows)], { type: 'application/csv;charset=utf-8' }));
+    else if (fmt === 'xlsx') void (async () => {
+      const XLSX = await loadXlsx();
+      const ws = XLSX.utils.aoa_to_sheet([HEADER, ...rows.map((r) => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])]);
+      ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ведомость');
+      download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    })();
+    else if (fmt === 'txt') {
+      const txt = rows.map((r, i) => `${i + 1}. ${[r.last, r.first, r.middle].join(' ').trim()} — счёт ${r.account || '—'}, сумма ${r.amount || '—'}`).join('\n');
+      download(`spisok_${nm}_${stamp()}.txt`, new Blob(['\uFEFF' + txt], { type: 'text/plain;charset=utf-8' }));
+    }
+    setExpMenu(0);
+  }
+  async function sendRegEntry(e: RegEntry) {
+    const rows = e.rows || [];
+    if (!rows.length) { alert('В записи нет строк.'); return; }
+    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
+    const blob = new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' });
+    const file = new File([blob], `ved_SBER_${nm}.csv`, { type: 'application/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Ведомость Сбербанк', text: `${rows.length} получателей, итого ${e.sum} ₽ (формат Сбербанк Онлайн)` }); return; } catch (err) { if ((err as Error).name === 'AbortError') return; }
+    }
+    download(file.name, blob);
+    alert('Прямая отправка не поддерживается браузером — файл скачан, прикрепите вручную.');
+  }
+
   function exportSourceRows(): VedRow[] {
     if (!expRegId) return rows;
     const en = registry.find((x) => x.id === expRegId);
@@ -895,44 +933,6 @@ export default function SberPay() {
           </div>
         )}
       </Card>
-
-  function csvTextFrom(rows: VedRow[]): string {
-    return [HEADER.map(csvEscape).join(';')]
-      .concat(rows.map((r) => [r.account, r.last, r.first, r.middle, r.amount || '0.00', r.deduct || '0.00'].map(csvEscape).join(';')))
-      .join('\r\n');
-  }
-  function exportRegEntry(e: RegEntry, fmt: string) {
-    const rows = e.rows || [];
-    if (!rows.length) { alert('В записи нет строк.'); return; }
-    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
-    if (fmt === 'csv1251') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' }));
-    else if (fmt === 'csvutf') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(['\uFEFF' + csvTextFrom(rows)], { type: 'application/csv;charset=utf-8' }));
-    else if (fmt === 'xlsx') void (async () => {
-      const XLSX = await loadXlsx();
-      const ws = XLSX.utils.aoa_to_sheet([HEADER, ...rows.map((r) => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])]);
-      ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Ведомость');
-      download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    })();
-    else if (fmt === 'txt') {
-      const txt = rows.map((r, i) => `${i + 1}. ${[r.last, r.first, r.middle].join(' ').trim()} — счёт ${r.account || '—'}, сумма ${r.amount || '—'}`).join('\n');
-      download(`spisok_${nm}_${stamp()}.txt`, new Blob(['\uFEFF' + txt], { type: 'text/plain;charset=utf-8' }));
-    }
-    setExpMenu(0);
-  }
-  async function sendRegEntry(e: RegEntry) {
-    const rows = e.rows || [];
-    if (!rows.length) { alert('В записи нет строк.'); return; }
-    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
-    const blob = new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' });
-    const file = new File([blob], `ved_SBER_${nm}.csv`, { type: 'application/csv' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: 'Ведомость Сбербанк', text: `${rows.length} получателей, итого ${e.sum} ₽ (формат Сбербанк Онлайн)` }); return; } catch (err) { if ((err as Error).name === 'AbortError') return; }
-    }
-    download(file.name, blob);
-    alert('Прямая отправка не поддерживается браузером — файл скачан, прикрепите вручную.');
-  }
 
       {/* Общий список */}
       <Card>
