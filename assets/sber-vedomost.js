@@ -178,7 +178,19 @@ const CSS = `
 .sbv .hide{display:none}
 .sbv-man ol{padding-left:20px;margin:8px 0}
 .sbv-man li{margin-bottom:6px;font-size:13px}
-.sbv-man p{font-size:13px;margin:6px 0}`;
+.sbv-man p{font-size:13px;margin:6px 0}
+.sbv .reglist{display:flex;flex-direction:column;gap:8px}
+.sbv .regitem{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(128,140,170,.25);border-radius:10px;padding:8px 12px}
+.sbv .regmain{font-size:13px;min-width:0}
+.sbv .regmeta{font-size:11.5px;opacity:.65}
+.sbv .badge{background:rgba(220,60,50,.85);color:#fff;border-radius:6px;padding:1px 6px;font-size:11px}
+.sbv .regbtns{display:flex;gap:6px;flex-shrink:0;align-items:center}
+.sbv .regbtns .ghost{padding:5px 10px;font-size:12px}
+.sbv .chk{margin:8px 0 0;padding:0;list-style:none;font-size:12.5px}
+.sbv .chk li{padding:5px 0 5px 26px;position:relative;border-bottom:1px dashed rgba(128,140,170,.2)}
+.sbv .chk li::before{content:"⚠";position:absolute;left:4px}
+.sbv .chk li.e::before{content:"✖";color:#d33}
+.sbv .chk li.w::before{content:"⚠";color:#c90}`;
 
 const TPL = `
 <h2>Ведомость Сбербанк <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
@@ -199,10 +211,17 @@ const TPL = `
   <p><b>Проблемы:</b> кракозябры → качайте CSV-1251 (кнопка по умолчанию); колонки съехали → разделитель «;»; «счёт не найден» → не 20 цифр или другой банк (для карт чужих банков — «Массовые переводы», другой шаблон).</p>
 </div>
 
+<div class="card hide" id="sbv-regcard">
+  <h3>Реестр загруженных файлов
+    <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button></h3>
+  <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
+  <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
+</div>
+
 <div class="card">
   <h3><span class="num">1</span>Загрузите предварительный список</h3>
-  <label class="filebtn"><input type="file" id="sbv-file" accept=".xlsx,.xls,.csv" style="display:none"> <button type="button" id="sbv-pick">Выбрать файл (.xlsx / .xls / .csv)</button></label>
-  <div class="fileinfo" id="sbv-fileinfo">Любой Excel: подойдут колонки «ФИО / счёт / сумма» в любом порядке</div>
+  <label class="filebtn"><input type="file" id="sbv-file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" id="sbv-pick">Выбрать файл (.xlsx / .xls / .csv)</button></label>
+  <div class="fileinfo" id="sbv-fileinfo">Excel (.xlsx/.xls), CSV, TXT или фото/скан (.png/.jpg) — с распознаванием текста, включая аккуратный рукописный</div>
 </div>
 
 <div class="card hide" id="sbv-mapcard">
@@ -289,7 +308,90 @@ function updateTotals(){
 }
 
 /* ---------- логика ---------- */
+/* ---------- мультформатная загрузка: Excel/CSV/TXT/фото (OCR) ---------- */
+function parseTextLines(text){
+  const rows = [];
+  for (const raw of text.split(/\r?\n/)){
+    let line = String(raw).replace(/[|*_#„“”"«»<>]/g, " ").replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    const tokens0 = line.split(" ");
+    let account = "";
+    const keep = [];
+    for (let i = 0; i < tokens0.length; i++){
+      const t = tokens0[i];
+      if (!account && /^[\d\u00A0]+$/.test(t)){
+        let j = i, digits = 0;
+        const run = [];
+        while (j < tokens0.length && /^[\d\u00A0]+$/.test(tokens0[j])){
+          run.push(tokens0[j]); digits += tokens0[j].replace(/\D/g, "").length;
+          if (digits >= 20) break;
+          j++;
+        }
+        if (digits === 20){ account = run.join("").replace(/\D/g, ""); i = j; continue; }
+      }
+      keep.push(t);
+    }
+    let amount = "";
+    for (let i = 0; i < keep.length; i++){
+      const c1 = keep[i].replace(/[\s\u00A0]/g, "").replace(",", ".");
+      if (/^\d{1,3}$/.test(c1) && i + 1 < keep.length && /[.,]/.test(keep[i + 1])){
+        const c2 = keep[i + 1].replace(/[\s\u00A0]/g, "").replace(",", ".");
+        if (/^\d{1,6}[.]\d{1,2}$/.test(c2)){ amount = c1 + c2; keep.splice(i, 2); i--; continue; }
+      }
+      if (!amount && /^\d{1,9}([.]\d{1,2})?$/.test(c1) && /[.,]/.test(keep[i])){ amount = c1; keep.splice(i, 1); i--; }
+    }
+    if (!amount){
+      for (let i = keep.length - 1; i >= 0; i--){
+        const clean = keep[i].replace(/[\s\u00A0]/g, "").replace(",", ".");
+        if (/^\d{1,6}([.]\d{1,2})?$/.test(clean)){ amount = clean; keep.splice(i, 1); break; }
+      }
+    }
+    while (keep.length && /^\d+$/.test(keep[keep.length - 1].replace(/[\s\u00A0]/g, ""))) keep.pop();
+    const fio = keep.join(" ").replace(/^[\-–—.:]+|[\-–—.:]+$/g, "").trim();
+    if (fio || account) rows.push([fio, account, amount]);
+  }
+  return rows;
+}
+function loadMatrix(headers, matrix, mapping, fileName, kind, infoText){
+  S.headers = headers; S.matrix = matrix; S.fileName = fileName; S.kind = kind;
+  S.mapping = mapping || guessMapping(headers);
+  document.getElementById("sbv-fileinfo").textContent = infoText;
+  renderMap();
+  document.getElementById("sbv-mapcard").classList.remove("hide");
+  applyMapping();
+  pushRegistry();
+}
+async function onImage(file){
+  const info = document.getElementById("sbv-fileinfo");
+  info.textContent = "Распознавание изображения… OCR-модель загружается (первый раз — до 1–2 мин, далее из кэша)";
+  try{
+    if (!window.Tesseract){
+      await new Promise((ok, no) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+        s.onload = ok; s.onerror = () => no(new Error("не удалось загрузить OCR-модель — проверьте интернет"));
+        document.head.appendChild(s);
+      });
+    }
+    const worker = await Tesseract.createWorker("rus");
+    try{
+      const { data } = await worker.recognize(file);
+      const rows = parseTextLines(data.text);
+      if (!rows.length) throw new Error("текст не распознан — сфотографируйте ровнее, светлее, крупнее");
+      loadMatrix(["ФИО (распознано)", "Счет", "Сумма"], rows, { fio: 0, account: 1, amount: 2 },
+        file.name, "image", `${file.name} · распознано строк: ${rows.length} · сверьте ведомость вручную, OCR может ошибаться`);
+    } finally { worker.terminate(); }
+  } catch (e){ info.textContent = "Ошибка распознавания: " + e.message; }
+}
+function onText(text, name){
+  const rows = parseTextLines(text);
+  if (!rows.length){ document.getElementById("sbv-fileinfo").textContent = "В файле не найдены строки с ФИО/счётом/суммой"; return; }
+  loadMatrix(["ФИО", "Счет", "Сумма"], rows, { fio: 0, account: 1, amount: 2 }, name, "text", `${name} · ${rows.length} строк`);
+}
 async function onFile(file){
+  const name = file.name.toLowerCase();
+  if (/\.(png|jpe?g|webp)$/.test(name)) return onImage(file);
+  if (name.endsWith(".txt")) return onText(await file.text(), file.name);
   let wb;
   try { wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); }
   catch (e) { document.getElementById("sbv-fileinfo").textContent = "Не удалось прочитать файл: " + e.message; return; }
@@ -299,14 +401,10 @@ async function onFile(file){
   if (!matrix.length){ document.getElementById("sbv-fileinfo").textContent = "Файл пустой"; return; }
   const first = matrix[0].map(c => String(c).trim());
   const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
-  if (looksHeader){ S.headers = first; S.matrix = matrix.slice(1); }
-  else { S.headers = first.map((_, i) => "Колонка " + (i + 1)); S.matrix = matrix; }
-  S.fileName = file.name;
-  S.mapping = guessMapping(S.headers);
-  document.getElementById("sbv-fileinfo").textContent = `${file.name} · ${S.matrix.length} строк · лист «${wb.SheetNames[0]}»`;
-  renderMap();
-  document.getElementById("sbv-mapcard").classList.remove("hide");
-  applyMapping();
+  let headers, data;
+  if (looksHeader){ headers = first; data = matrix.slice(1); }
+  else { headers = first.map((_, i) => "Колонка " + (i + 1)); data = matrix; }
+  loadMatrix(headers, data, null, file.name, "table", `${file.name} · ${data.length} строк · лист «${wb.SheetNames[0]}»`);
 }
 function applyMapping(){
   const get = (row, key) => { const i = S.mapping[key]; return (i == null || i < 0) ? "" : row[i]; };
@@ -353,6 +451,95 @@ function xlsxBlob(){
     { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
+/* ---------- реестр загруженных файлов ---------- */
+const REG_KEY = "sbv_registry_v1";
+function loadReg(){ try { return JSON.parse(localStorage.getItem(REG_KEY)) || []; } catch (e){ return []; } }
+function saveReg(r){ try { localStorage.setItem(REG_KEY, JSON.stringify(r.slice(0, 20))); } catch (e){} }
+function pushRegistry(){
+  const t = totals();
+  const reg = loadReg();
+  reg.unshift({ id: Date.now(), name: S.fileName || "без имени", date: new Date().toLocaleString("ru-RU"),
+    kind: S.kind || "table", rows: S.rows.map(r => ({ ...r })), count: S.rows.length, sum: t.sum.toFixed(2), bad: t.bad });
+  saveReg(reg); renderReg();
+}
+function renderReg(){
+  const reg = loadReg();
+  const card = document.getElementById("sbv-regcard");
+  const list = document.getElementById("sbv-reglist");
+  if (!card || !list) return;
+  if (!reg.length){ list.innerHTML = '<div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div>'; return; }
+  card.classList.remove("hide");
+  list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
+    <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
+    <div class="regbtns"><button type="button" class="ghost" data-open="${e.id}">Открыть</button><button type="button" class="del" data-rdel="${e.id}" title="Удалить из реестра">×</button></div>
+  </div>`).join("");
+}
+function restoreReg(id){
+  const e = loadReg().find(x => x.id === id);
+  if (!e) return;
+  S.rows = JSON.parse(JSON.stringify(e.rows || []));
+  S.fileName = e.name; S.appliedSum = parseFloat(e.sum) || 0;
+  document.getElementById("sbv-tablecard").classList.remove("hide");
+  document.getElementById("sbv-exportcard").classList.remove("hide");
+  renderTable();
+  document.getElementById("sbv-tablecard").scrollIntoView({ behavior: "smooth" });
+}
+
+/* ---------- сверка ФИО и счетов ---------- */
+function runCheck(){
+  const box = document.getElementById("sbv-checkres");
+  const issues = [];
+  const cur = S.rows;
+  const reg = loadReg();
+  const byAccount = new Map(), byFio = new Map();
+  const addAcc = (acc, last, src) => {
+    if (!acc || !/\d{20}/.test(acc)) return;
+    if (!byAccount.has(acc)) byAccount.set(acc, new Map());
+    const m = byAccount.get(acc);
+    if (!m.has(last)) m.set(last, new Set());
+    m.get(last).add(src);
+  };
+  const addFio = (fio, acc) => {
+    const k = normFio(fio);
+    if (!k) return;
+    if (!byFio.has(k)) byFio.set(k, new Set());
+    if (acc) byFio.get(k).add(acc);
+  };
+  const seenCur = new Map();
+  cur.forEach((r, i) => {
+    const fio = [r.last, r.first, r.middle].join(" ");
+    addAcc(r.account, r.last || ("строка " + (i + 1)), "текущая ведомость");
+    addFio(fio, r.account);
+    if (!r.last) issues.push({ l: "e", t: `Строка ${i + 1}: пустая фамилия` });
+    else {
+      if (/[A-Za-z]/.test(fio)) issues.push({ l: "w", t: `Строка ${i + 1}: латиница в ФИО «${fio.trim()}»` });
+      const k = normFio(fio);
+      if (seenCur.has(k)) issues.push({ l: "w", t: `«${fio.trim()}» встречается в ведомости 2 раза (строки ${seenCur.get(k) + 1} и ${i + 1})` });
+      else seenCur.set(k, i);
+    }
+    if (r.account && !/^\d{20}$/.test(r.account)) issues.push({ l: "e", t: `Строка ${i + 1}: счёт «${r.account}» — не 20 цифр` });
+  });
+  reg.forEach(e => (e.rows || []).forEach(r => {
+    addAcc(r.account, r.last || e.name, e.name);
+    addFio([r.last, r.first, r.middle].join(" "), r.account);
+  }));
+  for (const [acc, m] of byAccount){
+    if (m.size > 1){
+      const fams = [...m.keys()].filter(f => !/^строка /.test(f)).slice(0, 4).join(", ");
+      issues.push({ l: "e", t: `Счёт ${acc} числится на разные фамилии: ${fams} — проверьте, чей это счёт` });
+    }
+  }
+  for (const [k, accs] of byFio){
+    if (accs.size > 1) issues.push({ l: "w", t: `${k} — разные счета: ${[...accs].join(", ")} (возможна смена счёта — уточните актуальный)` });
+  }
+  const errs = issues.filter(x => x.l === "e").length;
+  const warns = issues.length - errs;
+  box.classList.remove("hide");
+  box.innerHTML = issues.length
+    ? `<b>Сверка:</b> ошибок — ${errs}, замечаний — ${warns}.<ul class="chk">${issues.slice(0, 50).map(x => `<li class="${x.l}">${esc(x.t)}</li>`).join("")}${issues.length > 50 ? `<li>…и ещё ${issues.length - 50}</li>` : ""}</ul>`
+    : '<b>Сверка:</b> конфликтов не найдено — ФИО и счета согласованы.';
+}
+
 /* ---------- публичный API ---------- */
 export function mount(el){
   root = el;
@@ -364,6 +551,14 @@ export function mount(el){
   el.innerHTML = `<div class="sbv">${TPL}</div>`;
   document.getElementById("sbv-pick").onclick = () => document.getElementById("sbv-file").click();
   document.getElementById("sbv-manbtn").onclick = () => document.getElementById("sbv-man").classList.toggle("hide");
+  document.getElementById("sbv-reglist").addEventListener("click", e => {
+    const o = e.target.closest("[data-open]");
+    const d = e.target.closest("[data-rdel]");
+    if (o) restoreReg(+o.dataset.open);
+    else if (d){ saveReg(loadReg().filter(x => x.id !== +d.dataset.rdel)); renderReg(); }
+  });
+  document.getElementById("sbv-regcheck").onclick = runCheck;
+  renderReg();
   document.getElementById("sbv-file").onchange = e => { if (e.target.files[0]) onFile(e.target.files[0]); };
   document.getElementById("sbv-map").onchange = e => {
     const k = e.target.dataset.k;
