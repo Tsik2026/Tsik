@@ -236,6 +236,7 @@ export default function SberPay() {
   const [appliedSum, setAppliedSum] = useState(0);
   const [manOpen, setManOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
+  const [expMenu, setExpMenu] = useState(0);
   const [master, setMaster] = useState<{ name: string; rows: { fio: string; account: string; amount: string }[] }>(() => {
     try { return JSON.parse(localStorage.getItem(MASTER_KEY) || '{\"name\":\"\",\"rows\":[]}'); } catch { return { name: '', rows: [] }; }
   });
@@ -634,10 +635,20 @@ export default function SberPay() {
                 <b>{e.name}</b><br />
                 <span className="text-[11.5px] opacity-65">{e.date} · {e.count} чел. · {e.sum} ₽{e.bad ? <> · <span className="rounded bg-red-600/85 text-white px-1.5 text-[11px]">ошибок: {e.bad}</span></> : ''}{e.kind === 'image' ? ' · фото/OCR' : ''}</span>
               </div>
-              <div className="flex gap-1.5 shrink-0 items-center">
-                <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => { setRows(JSON.parse(JSON.stringify(e.rows))); setAppliedSum(parseFloat(e.sum) || 0); setFileName(e.name); }}>Открыть</button>
+              <div className="flex gap-1.5 shrink-0 items-center flex-wrap justify-end">
+                <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => { setRows(JSON.parse(JSON.stringify(e.rows))); setAppliedSum(parseFloat(e.sum) || 0); setFileName(e.name); }}>Правка</button>
+                <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => sendRegEntry(e)}>Отправить</button>
+                <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => setExpMenu(expMenu === e.id ? 0 : e.id)}>Экспорт</button>
                 <button type="button" className="px-1.5 text-[15px] opacity-50" title="Удалить из реестра" onClick={() => { const r = loadReg().filter((x) => x.id !== e.id); saveReg(r); setRegistry(r); }}>×</button>
               </div>
+              {expMenu === e.id && (
+                <div className="w-full flex flex-wrap gap-1.5 mt-1.5 pt-1.5 border-t border-dashed border-slate-400/25">
+                  <button type="button" className="rounded-lg border border-slate-400/40 bg-slate-500/10 px-2.5 py-1 text-[12px]" onClick={() => exportRegEntry(e, 'csv1251')}>CSV Сбербанк Онлайн (1251)</button>
+                  <button type="button" className="rounded-lg border border-slate-400/40 bg-slate-500/10 px-2.5 py-1 text-[12px]" onClick={() => exportRegEntry(e, 'csvutf')}>CSV UTF-8</button>
+                  <button type="button" className="rounded-lg border border-slate-400/40 bg-slate-500/10 px-2.5 py-1 text-[12px]" onClick={() => exportRegEntry(e, 'xlsx')}>XLSX</button>
+                  <button type="button" className="rounded-lg border border-slate-400/40 bg-slate-500/10 px-2.5 py-1 text-[12px]" onClick={() => exportRegEntry(e, 'txt')}>TXT</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -655,6 +666,44 @@ export default function SberPay() {
           </div>
         )}
       </Card>
+
+  function csvTextFrom(rows: VedRow[]): string {
+    return [HEADER.map(csvEscape).join(';')]
+      .concat(rows.map((r) => [r.account, r.last, r.first, r.middle, r.amount || '0.00', r.deduct || '0.00'].map(csvEscape).join(';')))
+      .join('\r\n');
+  }
+  function exportRegEntry(e: RegEntry, fmt: string) {
+    const rows = e.rows || [];
+    if (!rows.length) { alert('В записи нет строк.'); return; }
+    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
+    if (fmt === 'csv1251') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' }));
+    else if (fmt === 'csvutf') download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(['\uFEFF' + csvTextFrom(rows)], { type: 'application/csv;charset=utf-8' }));
+    else if (fmt === 'xlsx') void (async () => {
+      const XLSX = await loadXlsx();
+      const ws = XLSX.utils.aoa_to_sheet([HEADER, ...rows.map((r) => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])]);
+      ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ведомость');
+      download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    })();
+    else if (fmt === 'txt') {
+      const txt = rows.map((r, i) => `${i + 1}. ${[r.last, r.first, r.middle].join(' ').trim()} — счёт ${r.account || '—'}, сумма ${r.amount || '—'}`).join('\n');
+      download(`spisok_${nm}_${stamp()}.txt`, new Blob(['\uFEFF' + txt], { type: 'text/plain;charset=utf-8' }));
+    }
+    setExpMenu(0);
+  }
+  async function sendRegEntry(e: RegEntry) {
+    const rows = e.rows || [];
+    if (!rows.length) { alert('В записи нет строк.'); return; }
+    const nm = (e.name || 'vedomost').replace(/\.[^.]+$/, '').replace(/[^\w\u0400-\u04FF\-]+/g, '_').slice(0, 40) || 'vedomost';
+    const blob = new Blob([enc1251(csvTextFrom(rows)).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' });
+    const file = new File([blob], `ved_SBER_${nm}.csv`, { type: 'application/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Ведомость Сбербанк', text: `${rows.length} получателей, итого ${e.sum} ₽ (формат Сбербанк Онлайн)` }); return; } catch (err) { if ((err as Error).name === 'AbortError') return; }
+    }
+    download(file.name, blob);
+    alert('Прямая отправка не поддерживается браузером — файл скачан, прикрепите вручную.');
+  }
 
       {/* Общий список */}
       <Card>
