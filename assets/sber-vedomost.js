@@ -105,6 +105,93 @@ async function updateCommissionMembers(commId, mem){
     return { total: mem.length, added, upgraded, deleted, updated };
   });
 }
+/* ---------- умное распознавание: контент-анализ + заголовки ---------- */
+function colEvidence(rows, i, tests){
+  let acc = 0, amt = 0, fio = 0, uik = 0;
+  for (let r = 0; r < tests; r++){
+    const v = String(rows[r] ? rows[r][i] ?? "" : "").trim();
+    if (!v) continue;
+    const d = v.replace(/\D/g, "");
+    if (d.length === 20) acc++;
+    if (/^\d{1,9}([.,]\d{1,2})?$/.test(v.replace(/[\s\u00A0]/g, "").replace(",", "."))) amt++;
+    if (/^[А-ЯЁ][а-яё]+(\s+[А-ЯЁ][а-яё]+)+/.test(v)) fio++;
+    if (/^(уик\s*)?№?\s*\d{1,4}$/i.test(v)) uik++;
+  }
+  const n = Math.max(tests, 1);
+  return { acc: acc / n, amt: amt / n, fio: fio / n, uik: uik / n };
+}
+function smartMapping(headers, rows){
+  const tests = Math.min(rows ? rows.length : 0, 30);
+  const ev = headers.map((_, i) => colEvidence(rows || [], i, tests));
+  const used = new Set();
+  const mapping = {}; const conf = {};
+  function pick(key, metric, re, minContent){
+    let best = -1, bs = 0;
+    headers.forEach((h, i) => {
+      if (used.has(i)) return;
+      const hs = re.test(String(h)) ? 0.6 : 0;
+      const s = ev[i][metric] * 0.8 + hs;
+      if (s > bs){ bs = s; best = i; }
+    });
+    if (best >= 0 && (ev[best][metric] >= minContent || re.test(String(headers[best])))){
+      mapping[key] = best; used.add(best); conf[key] = Math.round(ev[best][metric] * 100);
+    }
+  }
+  pick("account", "acc", /сч[её]т|account/i, 0.5);
+  pick("amount", "amt", /сумма|выплат|начисл|итог|вознагражд|к\s*оплат/i, 0.5);
+  pick("fio", "fio", /фио|получател|сотрудник|работник|член|наименование/i, 0.4);
+  if (mapping.fio == null){
+    // раздельные ФИО — по заголовкам
+    for (const [key, re] of [["last", /фамили/i], ["first", /(^|[^а-яa-z])имя([^а-яa-z]|$)/i], ["middle", /отчеств/i]]){
+      const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(String(h)));
+      if (i >= 0){ mapping[key] = i; used.add(i); }
+    }
+  }
+  for (const [key, re] of [["role", /председат|замест|секретарь|должност/i], ["deduct", /удерж|ндфл/i]]){
+    const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(String(h)));
+    if (i >= 0){ mapping[key] = i; used.add(i); }
+  }
+  const vals = Object.keys(conf).map(k => conf[k]);
+  const confidence = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+  return { mapping, confidence };
+}
+const MAPMEM_KEY = "sbv_mapmem_v1";
+function mapMemoryGet(name){
+  try{
+    const m = JSON.parse(localStorage.getItem(MAPMEM_KEY) || "{}");
+    return m[String(name || "").toLowerCase().replace(/\.[^.]+$/, "")] || null;
+  }catch(e){ return null; }
+}
+function mapMemoryPut(name, mapping){
+  try{
+    const m = JSON.parse(localStorage.getItem(MAPMEM_KEY) || "{}");
+    m[String(name || "").toLowerCase().replace(/\.[^.]+$/, "")] = mapping;
+    localStorage.setItem(MAPMEM_KEY, JSON.stringify(m));
+  }catch(e){}
+}
+function normFioCase(fio){
+  return String(fio || "").split(/\s+/).map(w => {
+    if (!w) return w;
+    if (w === w.toLowerCase() || w === w.toUpperCase()) return w[0].toUpperCase() + w.slice(1).toLowerCase();
+    return w;
+  }).join(" ");
+}
+function filterSmartRows(matrix){
+  const out = []; let totalRow = null;
+  for (const row of matrix){
+    const nonEmpty = row.filter(c => String(c ?? "").trim() !== "");
+    if (!nonEmpty.length) continue;
+    const first = String(row[0] ?? "").trim();
+    if (/^(итог|всего|сумма|общая|результат)/i.test(first) && nonEmpty.length <= 3){
+      for (const c of nonEmpty){ const n = parseFloat(String(c).replace(/[\s\u00A0]/g, "").replace(",", ".")); if (isFinite(n) && n > 0) totalRow = n; }
+      continue;
+    }
+    if (nonEmpty.length === 1 && row.length > 1) continue; // мусорные строки
+    out.push(row);
+  }
+  return { rows: out, totalRow };
+}
+
 function guessMapping(headers){
   const used = new Set(), mapping = {};
   for (const [key, re] of RULES){
@@ -196,7 +283,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay18</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay19</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -261,6 +348,7 @@ const TPL = `
 <div class="card hide" id="sbv-mapcard">
   <h3><span class="num">2</span>Распознавание — проверьте сопоставление колонок</h3>
   <div class="maprow" id="sbv-map"></div>
+  <div class="fileinfo hide" id="sbv-conf" style="margin-bottom:8px"></div>
   <div class="btnrow"><button type="button" id="sbv-apply">Применить → сформировать ведомость</button></div>
   <div class="btnrow" style="margin-top:14px;border-top:1px solid rgba(128,140,170,.25);padding-top:12px">
     <div style="width:100%;font-size:13px"><b>Обновить справочник членов УИК</b> <span style="opacity:.6">— заменить демонстрационные данные этим списком</span></div>
@@ -398,7 +486,20 @@ function parseTextLines(text){
 }
 function loadMatrix(headers, matrix, mapping, fileName, kind, infoText){
   S.headers = headers; S.matrix = matrix; S.fileName = fileName; S.kind = kind;
-  S.mapping = mapping || guessMapping(headers);
+  if (mapping){ S.mapping = mapping; S.confidence = 100; }
+  else {
+    const mem = mapMemoryGet(fileName);
+    if (mem){ S.mapping = mem; S.confidence = 100; S.fromMemory = true; }
+    else {
+      const sm = smartMapping(headers, matrix);
+      S.mapping = sm.mapping; S.confidence = sm.confidence;
+    }
+  }
+  const cf = document.getElementById("sbv-conf");
+  if (cf){
+    cf.classList.remove("hide");
+    cf.textContent = (S.fromMemory ? "Применено сохранённое сопоставление · " : "Умное распознавание · уверенность: " + S.confidence + "%") + (S.confidence < 60 && !S.fromMemory ? " — проверьте колонки вручную" : "");
+  }
   document.getElementById("sbv-fileinfo").textContent = infoText;
   renderMap();
   document.getElementById("sbv-mapcard").classList.remove("hide");
@@ -447,16 +548,24 @@ async function onFile(file){
   let wb;
   try { wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); }
   catch (e) { document.getElementById("sbv-fileinfo").textContent = "Не удалось прочитать файл: " + e.message; return; }
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws){ document.getElementById("sbv-fileinfo").textContent = "В файле нет листов"; return; }
-  const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-  if (!matrix.length){ document.getElementById("sbv-fileinfo").textContent = "Файл пустой"; return; }
-  const first = matrix[0].map(c => String(c).trim());
-  const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
-  let headers, data;
-  if (looksHeader){ headers = first; data = matrix.slice(1); }
-  else { headers = first.map((_, i) => "Колонка " + (i + 1)); data = matrix; }
-  loadMatrix(headers, data, null, file.name, "table", `${file.name} · ${data.length} строк · лист «${wb.SheetNames[0]}»`);
+  let best = null;
+  for (const sn of wb.SheetNames){
+    const ws = wb.Sheets[sn];
+    if (!ws) continue;
+    const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+    if (matrix.length < 2) continue;
+    const first = matrix[0].map(c => String(c).trim());
+    const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
+    const headers = looksHeader ? first : first.map((_, i) => "Колонка " + (i + 1));
+    const data = looksHeader ? matrix.slice(1) : matrix;
+    const sm = smartMapping(headers, data);
+    const filled = Object.keys(sm.mapping).length;
+    const score = filled * 1000 + data.length * 2 + sm.confidence;
+    if (!best || score > best.score) best = { sn, headers, data, score };
+  }
+  if (!best){ document.getElementById("sbv-fileinfo").textContent = "В файле нет данных"; return; }
+  const smart = filterSmartRows(best.data);
+  loadMatrix(best.headers, smart.rows, null, file.name, "table", `${file.name} · ${smart.rows.length} строк · лист «${best.sn}» (выбран автоматически)`);
 }
 function applyMapping(){
   const get = (row, key) => { const i = S.mapping[key]; return (i == null || i < 0) ? "" : row[i]; };
@@ -467,7 +576,7 @@ function applyMapping(){
       amount: normAmount(get(row, "amount")),
       deduct: normAmount(get(row, "deduct")) || "0.00",
     };
-    if (S.mapping.fio != null && S.mapping.fio >= 0) Object.assign(r, splitFio(get(row, "fio")));
+    if (S.mapping.fio != null && S.mapping.fio >= 0) Object.assign(r, splitFio(normFioCase(String(get(row, "fio")).trim())));
     else {
       r.last = String(get(row, "last")).trim();
       r.first = String(get(row, "first")).trim();
@@ -1012,7 +1121,7 @@ export function mount(el){
     const k = e.target.dataset.k;
     if (k) S.mapping[k] = +e.target.value;
   };
-  document.getElementById("sbv-apply").onclick = applyMapping;
+  document.getElementById("sbv-apply").onclick = () => { mapMemoryPut(S.fileName, S.mapping); S.fromMemory = true; applyMapping(); };
   (async () => {
     const sel = document.getElementById("sbv-comm");
     try{
@@ -1096,7 +1205,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay18";
+  window.__sbvdmV = "sberpay19";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
