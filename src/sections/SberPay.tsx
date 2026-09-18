@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay17';
+const VER = 'sberpay18';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -251,6 +251,7 @@ export default function SberPay() {
   const [uikReport, setUikReport] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const masterRef = useRef<HTMLInputElement>(null);
+  const tableFileRef = useRef<HTMLInputElement>(null);
   const uikFileRef = useRef<HTMLInputElement>(null);
   const restored = useRef(false);
 
@@ -850,9 +851,18 @@ export default function SberPay() {
       )}
 
       {/* Шаг 3. Ведомость */}
-      {rows.length > 0 && (
+      {(rows.length > 0 || registry.length > 0) && (
         <Card>
           <CardHead><Num>3</Num>Ведомость — проверьте и поправьте вручную</CardHead>
+          <div className="flex flex-wrap gap-2 items-center mb-2">
+            <select value={0} onChange={(e) => { const en = registry.find((x) => x.id === +e.target.value); if (en) { setRows(JSON.parse(JSON.stringify(en.rows))); setAppliedSum(parseFloat(en.sum) || 0); setFileName(en.name); } e.target.value = '0'; }} className="flex-1 min-w-[170px] rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px]">
+              <option value={0}>— открыть список из реестра для правки —</option>
+              {registry.map((en) => <option key={en.id} value={en.id}>{en.name} · {en.count} чел.</option>)}
+            </select>
+            <input ref={tableFileRef} type="file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+            <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={() => tableFileRef.current?.click()}>Загрузить файл (распознавание + Excel)</button>
+          </div>
+          {rows.length > 0 && (<>
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] border-collapse">
               <thead>
@@ -905,6 +915,7 @@ export default function SberPay() {
             {appliedSum && Math.abs(totals.sum - appliedSum) > 0.005 ? <> · Δ от загруженного: {totals.sum - appliedSum > 0 ? '+' : ''}{(totals.sum - appliedSum).toFixed(2)} ₽</> : ''}
           </p>
           <p className="text-[12px] opacity-60 mt-1.5">Красная строка — ошибка: счёт ≠ 20 цифр или сумма пустая. Жёлтая — одинаковый счёт у разных получателей.</p>
+          </>)}
         </Card>
       )}
 
