@@ -444,8 +444,25 @@ function guard(){
   if (!S.rows.length){ alert("Ведомость пустая."); return false; }
   return true;
 }
+function sheetFromRows(aoa){
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  for (let r = 1; r <= range.e.r; r++){
+    const acc = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+    if (acc) acc.z = "@";
+    for (const c of [4, 5]){
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell && typeof cell.v === "number") cell.z = "#,##0.00";
+    }
+  }
+  ws["!cols"] = [{ wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 24 }];
+  return ws;
+}
+function buildLinesX(){
+  return S.rows.map(r => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0]);
+}
 function xlsxBlob(){
-  const ws = XLSX.utils.aoa_to_sheet([HEADER, ...buildLines()]);
+  const ws = sheetFromRows([HEADER, ...buildLinesX()]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Ведомость");
   return new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })],
@@ -607,6 +624,17 @@ export function mount(el){
     tr.classList.toggle("badrow", rowProblems(S.rows[i]).length > 0);
     updateTotals();
   });
+  document.getElementById("sbv-tbody").addEventListener("focusout", e => {
+    const k = e.target.dataset && e.target.dataset.k;
+    if (!k) return;
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const i = +tr.dataset.i; if (!S.rows[i]) return;
+    if (k === "amount" || k === "deduct"){
+      const n = parseFloat(String(e.target.value).replace(/[\s\u00A0]/g, "").replace(",", "."));
+      if (isFinite(n)){ S.rows[i][k] = n.toFixed(2); e.target.value = (+n.toFixed(2)).toLocaleString("ru-RU", { minimumFractionDigits: 2 }); updateTotals(); }
+    }
+    if (k === "account"){ const d = digits(e.target.value); S.rows[i][k] = d; e.target.value = d; }
+  });
   document.getElementById("sbv-tbody").addEventListener("click", e => {
     const b = e.target.closest("[data-del]"); if (!b) return;
     S.rows.splice(+b.dataset.del, 1); renderTable();
@@ -624,9 +652,9 @@ export function mount(el){
     download(`ved_SBER_${stamp()}.xlsx`, xlsxBlob());
   };
   document.getElementById("sbv-sample").onclick = () => {
-    const ws = XLSX.utils.aoa_to_sheet([HEADER,
-      ["40702810123450123456","Иванов","Иван","Иванович","15000.00","0.00"],
-      ["40702810987650432109","Петрова","Мария","Сергеевна","22850.50","0.00"]]);
+    const ws = sheetFromRows([HEADER,
+      ["40702810123450123456","Иванов","Иван","Иванович",15000,0],
+      ["40702810987650432109","Петрова","Мария","Сергеевна",22850.5,0]]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Ведомость");
     download("obrazec_SBER_vedomost.xlsx", new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })],
