@@ -13,6 +13,7 @@ export const SECTIONS: NavDef[] = [
   { id: 'dashboard', label: 'Дашборд', short: 'Дашборд', hint: 'Контроль и статус' },
   { id: 'estimate', label: 'Смета', short: 'Смета', hint: 'Лимиты и решения' },
   { id: 'payroll', label: 'Вознаграждения', short: 'Вознагр.', hint: 'Табель → ведомость (прил. 6)' },
+  { id: 'sberpay', label: 'Ведомость Сбербанк', short: 'Сбербанк', hint: 'Реестр для импорта в Сбер Бизнес Онлайн' },
   { id: 'operations', label: 'Банк и касса', short: 'Операции', hint: 'Счета 40201/40202' },
   { id: 'advances', label: 'Подотчёт', short: 'Подотчёт', hint: 'Авансовые отчёты УИК' },
   { id: 'reports', label: 'Отчётность', short: 'Отчёты', hint: 'Прил. № 10, Excel, печать' },
