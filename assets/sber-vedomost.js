@@ -80,9 +80,8 @@ function collectMembers(){
   }
   return out;
 }
-async function updateCommissionMembers(commId){
+async function updateCommissionMembers(commId, mem){
   const db = window.__db;
-  const mem = collectMembers();
   if (!mem.length) throw new Error("не удалось собрать ФИО из файла — проверьте сопоставление колонок");
   const incoming = new Map();
   mem.forEach(m => incoming.set(normFio(m.fio), m.role));
@@ -193,7 +192,7 @@ const CSS = `
 .sbv .chk li.w::before{content:"⚠";color:#c90}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay9</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay10</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -204,6 +203,7 @@ const TPL = `
     <li><b>Проверьте распознавание.</b> Если колонки определились неверно — поправьте выпадающие списки и нажмите «Применить» ещё раз.</li>
     <li><b>Обновите справочник УИК (необязательно):</b> выберите комиссию → «Обновить состав» — демонстрационные данные заменятся этим списком.</li>
     <li><b>Проверьте ведомость:</b> тап по ячейке — правка. 🔴 красная строка — ошибка (счёт ≠ 20 цифр, пустая сумма/фамилия), выгрузка заблокирована. 🟡 жёлтая — дубль счёта. Внизу — итоги: получателей и сумма; сверьте со сметой до копейки.</li>
+    <li><b>«Обновление списков УИК»</b> — отдельная кнопка: загрузите состав (Excel/CSV/TXT/фото) — по колонке с номером УИК списки всех комиссий обновятся автоматически, демонстрационные данные заменятся.</li>
     <li><b>Реестр файлов</b> (вверху вкладки): каждая загрузка сохраняется — «Открыть» вернёт её ведомость, «Сверка ФИО и счетов» проверит: счёт на разные фамилии, дубли людей, разные счёта одного человека между файлами.</li>
     <li><b>«⬇ Выгрузить в Сбербанк»</b> — файл CSV Windows-1251 (разделитель «;»), родной формат «Ведомость на счета». Запасные варианты: CSV UTF-8, XLSX, образец.</li>
     <li><b>Импорт в банк:</b> Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости → сверьте количество получателей и итог по предпросмотру → подпишите.</li>
@@ -217,6 +217,17 @@ const TPL = `
     <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button></h3>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
   <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+  <h3>Обновление списков УИК</h3>
+  <div class="hint" style="margin:0 0 10px">Отдельная загрузка актуального состава: демонстрационные данные комиссий заменятся этим списком. Если в файле есть колонка с номером УИК — обновление пройдёт по всем комиссиям автоматически, иначе выберите комиссию вручную.</div>
+  <div class="btnrow">
+    <label class="filebtn"><input type="file" id="sbv-uikfile" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" class="ghost" id="sbv-uikpick">Выбрать файл состава</button></label>
+    <select id="sbv-uikcomm" style="flex:1;min-width:170px"><option value="">— по колонке УИК в файле —</option></select>
+    <button type="button" id="sbv-uikgo">Обновить списки УИК</button>
+  </div>
+  <div class="fileinfo" id="sbv-uikinfo">Файл не выбран</div>
 </div>
 
 <div class="card">
@@ -495,6 +506,92 @@ function restoreDraft(){
   }catch(e){}
 }
 
+/* ---------- отдельное обновление списков УИК ---------- */
+const U = { headers: [], matrix: [], mapping: {}, uikCol: -1, fileName: "" };
+async function extractRows(file){
+  const name = file.name.toLowerCase();
+  if (/\.(png|jpe?g|webp)$/.test(name)){
+    if (!window.Tesseract){
+      await new Promise((ok, no) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+        s.onload = ok; s.onerror = () => no(new Error("не удалось загрузить OCR-модель — проверьте интернет"));
+        document.head.appendChild(s);
+      });
+    }
+    const worker = await Tesseract.createWorker("rus");
+    try{
+      const { data } = await worker.recognize(file);
+      return { rows: parseTextLines(data.text), headers: ["ФИО (распознано)", "Счет", "Сумма"], ocr: true };
+    } finally { worker.terminate(); }
+  }
+  if (name.endsWith(".txt")) return { rows: parseTextLines(await file.text()), headers: ["ФИО", "Счет", "Сумма"] };
+  const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) throw new Error("в файле нет листов");
+  const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  if (!matrix.length) throw new Error("файл пустой");
+  const first = matrix[0].map(c => String(c).trim());
+  const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
+  if (looksHeader) return { rows: matrix.slice(1), headers: first };
+  return { rows: matrix, headers: first.map((_, i) => "Колонка " + (i + 1)) };
+}
+function detectUikColumn(headers, rows){
+  let best = -1, bestScore = 0;
+  headers.forEach((h, i) => {
+    let score = /уик|комисси/i.test(String(h)) ? 3 : 0;
+    let nums = 0; const tests = Math.min(rows.length, 25);
+    for (let r = 0; r < tests; r++){
+      if (/^(уик\s*)?№?\s*\d{1,4}$/i.test(String(rows[r][i] ?? "").trim())) nums++;
+    }
+    score += (nums / tests) * 3;
+    if (score > bestScore){ bestScore = score; best = i; }
+  });
+  return bestScore >= 2 ? best : -1;
+}
+async function runUikUpdate(){
+  const info = document.getElementById("sbv-uikinfo");
+  if (!U.matrix.length){ info.textContent = "Сначала выберите файл состава."; return; }
+  const db = window.__db;
+  if (!db || !db.commissions){ info.textContent = "Нет доступа к базе приложения."; return; }
+  const comms = (await db.commissions.toArray()).filter(c => c.level === "UIK");
+  const numFromRef = v => { const m = String(v ?? "").match(/\d{1,4}/); return m ? +m[0] : null; };
+  const manualId = +document.getElementById("sbv-uikcomm").value || null;
+  if (U.uikCol < 0 && !manualId){ info.textContent = "Колонка УИК не найдена — выберите комиссию вручную."; return; }
+  const groups = new Map(), skipped = [];
+  for (const row of U.matrix){
+    const get = k => { const i = U.mapping[k]; return (i == null || i < 0) ? "" : row[i]; };
+    let fio = "";
+    if (U.mapping.fio != null && U.mapping.fio >= 0) fio = String(get("fio")).trim();
+    else fio = [get("last"), get("first"), get("middle")].map(x => String(x).trim()).filter(Boolean).join(" ");
+    if (!fio) continue;
+    const role = mapRole(get("role"));
+    let commId = manualId;
+    if (!commId && U.uikCol >= 0){
+      const n = numFromRef(row[U.uikCol]);
+      if (n != null){
+        const c = comms.find(c => c.uikNo === n) || comms.find(c => String(c.code).includes(String(n)));
+        commId = c ? c.id : null;
+      }
+    }
+    if (!commId){ skipped.push(fio); continue; }
+    if (!groups.has(commId)) groups.set(commId, []);
+    groups.get(commId).push({ fio, role });
+  }
+  if (!groups.size){ info.textContent = "Не удалось сопоставить ни одного человека с комиссией." + (skipped.length ? " Без УИК: " + skipped.slice(0, 5).join(", ") : ""); return; }
+  info.textContent = "Обновление " + groups.size + " комиссий…";
+  const lines = [];
+  for (const [cid, mem] of groups){
+    const c = comms.find(x => x.id === cid);
+    try{
+      const st = await updateCommissionMembers(cid, mem);
+      lines.push(`${c ? c.code : cid}: ${st.total} чел. — добавлено ${st.added}, демо→актуальные ${st.upgraded}, демо удалено ${st.deleted}, роли ${st.updated}`);
+    }catch(e){ lines.push(`${c ? c.code : cid}: ошибка — ${e.message}`); }
+  }
+  if (skipped.length) lines.push("Без совпавшей комиссии (" + skipped.length + "): " + skipped.slice(0, 6).join(", ") + (skipped.length > 6 ? "…" : ""));
+  info.innerHTML = "Готово.<br>" + lines.map(esc).join("<br>");
+}
+
 /* ---------- реестр загруженных файлов ---------- */
 const REG_KEY = "sbv_registry_v1";
 function loadReg(){ try { return JSON.parse(localStorage.getItem(REG_KEY)) || []; } catch (e){ return []; } }
@@ -602,6 +699,21 @@ export function mount(el){
     else if (d){ saveReg(loadReg().filter(x => x.id !== +d.dataset.rdel)); renderReg(); }
   });
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  document.getElementById("sbv-uikpick").onclick = () => document.getElementById("sbv-uikfile").click();
+  document.getElementById("sbv-uikfile").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    const info = document.getElementById("sbv-uikinfo");
+    info.textContent = "Чтение файла…";
+    try{
+      const { rows, headers, ocr } = await extractRows(f);
+      if (!rows.length) throw new Error("не найдены строки с данными");
+      U.matrix = rows; U.headers = headers; U.fileName = f.name;
+      U.mapping = guessMapping(headers);
+      U.uikCol = detectUikColumn(headers, rows);
+      info.textContent = `${f.name} · ${rows.length} строк · колонка УИК: ${U.uikCol >= 0 ? '"' + headers[U.uikCol] + '"' : "не найдена — выберите комиссию вручную"}${ocr ? " · OCR (сверьте вручную)" : ""}`;
+    }catch(err){ U.matrix = []; info.textContent = "Ошибка чтения: " + err.message; }
+  };
+  document.getElementById("sbv-uikgo").onclick = runUikUpdate;
   renderReg();
   if (!S.rows.length) restoreDraft();
   document.getElementById("sbv-file").onchange = e => { if (e.target.files[0]) onFile(e.target.files[0]); };
@@ -616,8 +728,10 @@ export function mount(el){
       const db = window.__db;
       if (!db || !db.commissions) throw new Error("нет доступа");
       const list = (await db.commissions.toArray()).filter(c => c.level === "UIK").sort((a, b) => (a.uikNo || 0) - (b.uikNo || 0));
-      sel.innerHTML = '<option value="">— выберите комиссию —</option>' +
-        list.map(c => `<option value="${c.id}">${esc(c.code)}${c.district ? " · " + esc(c.district) : ""}</option>`).join("");
+      const opts = list.map(c => `<option value="${c.id}">${esc(c.code)}${c.district ? " · " + esc(c.district) : ""}</option>`).join("");
+      sel.innerHTML = '<option value="">— выберите комиссию —</option>' + opts;
+      const sel2 = document.getElementById("sbv-uikcomm");
+      if (sel2) sel2.innerHTML = '<option value="">— по колонке УИК в файле —</option>' + opts;
     }catch(e){ sel.innerHTML = '<option value="">справочник недоступен</option>'; }
   })();
   document.getElementById("sbv-updcomm").onclick = async () => {
@@ -627,7 +741,7 @@ export function mount(el){
     const btn = document.getElementById("sbv-updcomm");
     btn.disabled = true; res.textContent = "Обновление…";
     try{
-      const st = await updateCommissionMembers(id);
+      const st = await updateCommissionMembers(id, collectMembers());
       res.textContent = `Готово: ${st.total} человек из файла. Добавлено новых: ${st.added}, демо переведено в актуальные: ${st.upgraded}, демо удалено: ${st.deleted}, роли уточнены: ${st.updated}.`;
     }catch(e){ res.textContent = "Ошибка обновления: " + e.message; }
     finally{ btn.disabled = false; }
@@ -688,7 +802,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay9";
+  window.__sbvdmV = "sberpay10";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
