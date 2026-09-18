@@ -192,7 +192,7 @@ const CSS = `
 .sbv .chk li.w::before{content:"⚠";color:#c90}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay10</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay11</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -212,7 +212,7 @@ const TPL = `
   <p><b>Проблемы:</b> кракозябры → качайте CSV-1251 (кнопка по умолчанию); колонки съехали → разделитель «;»; «счёт не найден» → не 20 цифр или другой банк (для карт чужих банков — «Массовые переводы», другой шаблон).</p>
 </div>
 
-<div class="card hide" id="sbv-regcard">
+<div class="card" id="sbv-regcard">
   <h3>Реестр загруженных файлов
     <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button></h3>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
@@ -608,7 +608,7 @@ function renderReg(){
   const card = document.getElementById("sbv-regcard");
   const list = document.getElementById("sbv-reglist");
   if (!card || !list) return;
-  if (!reg.length){ list.innerHTML = '<div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div>'; return; }
+  if (!reg.length){ list.innerHTML = '<div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div>'; card.classList.remove("hide"); return; }
   card.classList.remove("hide");
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
@@ -802,7 +802,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay10";
+  window.__sbvdmV = "sberpay11";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
