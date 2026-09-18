@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay15';
+const VER = 'sberpay16';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -780,6 +780,19 @@ export default function SberPay() {
         <div className="flex flex-wrap gap-2 items-center">
           <input ref={uikFileRef} type="file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUikFile(f); e.target.value = ''; }} />
           <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={() => uikFileRef.current?.click()}>Выбрать файл состава</button>
+          <select value={uState?.fromReg || 0} onChange={(e) => {
+            const id = +e.target.value;
+            const en = registry.find((x) => x.id === id);
+            if (!en) { setUState(null); setUInfo('Файл не выбран'); return; }
+            const rows = (en.rows || []).map((r) => [[r.last, r.first, r.middle].join(' ').trim(), r.account || '', r.amount || '']);
+            if (!rows.length) { setUState(null); setUInfo('В записи реестра нет строк.'); return; }
+            const col = detectUikColumn(['ФИО', 'Счет', 'Сумма'], rows);
+            setUState({ headers: ['ФИО', 'Счет', 'Сумма'], matrix: rows, mapping: { fio: 0, account: 1, amount: 2 }, uikCol: col, fileName: en.name + ' (реестр)', fromReg: id } as typeof uState & { fromReg: number });
+            setUInfo(`${en.name} · из реестра · ${rows.length} строк · колонка УИК: ${col >= 0 ? '"ФИО/Счет/Сумма"' : 'не найдена — выберите комиссию вручную'}`);
+          }} className="flex-1 min-w-[160px] rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px]">
+            <option value={0}>— или выбрать из реестра вкладки —</option>
+            {registry.map((en) => <option key={en.id} value={en.id}>{en.name} · {en.count} чел.</option>)}
+          </select>
           <select value={uikManualId} onChange={(e) => setUikManualId(+e.target.value)} className="flex-1 min-w-[170px] rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px]">
             <option value={0}>— по колонке УИК в файле —</option>
             {uiks.map((c) => <option key={c.id} value={c.id}>{c.code}{c.district ? ` · ${c.district}` : ''}</option>)}
