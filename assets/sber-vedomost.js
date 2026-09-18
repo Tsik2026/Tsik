@@ -189,10 +189,12 @@ const CSS = `
 .sbv .chk li{padding:5px 0 5px 26px;position:relative;border-bottom:1px dashed rgba(128,140,170,.2)}
 .sbv .chk li::before{content:"⚠";position:absolute;left:4px}
 .sbv .chk li.e::before{content:"✖";color:#d33}
-.sbv .chk li.w::before{content:"⚠";color:#c90}`;
+.sbv .chk li.w::before{content:"⚠";color:#c90}
+.sbv .regmenu{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(128,140,170,.25)}
+.sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay12</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay13</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -690,9 +692,61 @@ function renderReg(){
   card.classList.remove("hide");
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
-    <div class="regbtns"><button type="button" class="ghost" data-open="${e.id}">Открыть</button><button type="button" class="del" data-rdel="${e.id}" title="Удалить из реестра">×</button></div>
+    <div class="regbtns">
+      <button type="button" class="ghost" data-open="${e.id}">Правка</button>
+      <button type="button" class="ghost" data-send="${e.id}">Отправить</button>
+      <button type="button" class="ghost" data-exp="${e.id}">Экспорт</button>
+      <button type="button" class="del" data-rdel="${e.id}" title="Удалить из реестра">×</button>
+    </div>
+    <div class="regmenu hide" data-menu="${e.id}">
+      <button type="button" data-fmt="csv1251" data-id="${e.id}">CSV Сбербанк Онлайн (Windows-1251)</button>
+      <button type="button" data-fmt="csvutf" data-id="${e.id}">CSV UTF-8</button>
+      <button type="button" data-fmt="xlsx" data-id="${e.id}">XLSX</button>
+      <button type="button" data-fmt="txt" data-id="${e.id}">TXT (список)</button>
+    </div>
   </div>`).join("");
 }
+function regEntryRows(id){
+  const e = loadReg().find(x => x.id === id);
+  return e ? e : null;
+}
+function exportRegEntry(id, fmt){
+  const e = regEntryRows(id); if (!e) return;
+  const rows = e.rows || [];
+  if (!rows.length){ alert("В записи нет строк."); return; }
+  const nm = (e.name || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 40) || "vedomost";
+  if (fmt === "csv1251") download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvTextFrom(rows))], { type: "application/csv;charset=windows-1251" }));
+  else if (fmt === "csvutf") download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(["\uFEFF" + csvTextFrom(rows)], { type: "application/csv;charset=utf-8" }));
+  else if (fmt === "xlsx"){
+    const aoa = [HEADER, ...rows.map(r => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])];
+    const ws = sheetFromRows(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ведомость");
+    download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  }
+  else if (fmt === "txt"){
+    const txt = rows.map((r, i) => `${i + 1}. ${[r.last, r.first, r.middle].join(" ").trim()} — счёт ${r.account || "—"}, сумма ${r.amount || "—"}`).join("\n");
+    download(`spisok_${nm}_${stamp()}.txt`, new Blob(["\uFEFF" + txt], { type: "text/plain;charset=utf-8" }));
+  }
+}
+async function sendRegEntry(id){
+  const e = regEntryRows(id); if (!e) return;
+  const rows = e.rows || [];
+  if (!rows.length){ alert("В записи нет строк."); return; }
+  const nm = (e.name || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 40) || "vedomost";
+  const blob = new Blob([enc1251(csvTextFrom(rows))], { type: "application/csv;charset=windows-1251" });
+  const file = new File([blob], `ved_SBER_${nm}.csv`, { type: "application/csv" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })){
+    try{ await navigator.share({ files: [file], title: "Ведомость Сбербанк", text: `${rows.length} получателей, итого ${e.sum} ₽ (файл в формате Сбербанк Онлайн)` }); return; }catch(err){ if (err && err.name === "AbortError") return; }
+  }
+  download(file.name, blob);
+  alert("Прямая отправка не поддерживается этим браузером — файл скачан, прикрепите его вручную в мессенджер/почту.");
+}
+function csvTextFrom(rows){
+  const q = v => { v = String(v ?? ""); return /[";\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  return [HEADER.map(q).join(";")].concat(rows.map(r => [r.account, r.last, r.first, r.middle, r.amount || "0.00", r.deduct || "0.00"].map(q).join(";"))).join("\r\n");
+}
+
 function restoreReg(id){
   const e = loadReg().find(x => x.id === id);
   if (!e) return;
@@ -773,8 +827,18 @@ export function mount(el){
   document.getElementById("sbv-reglist").addEventListener("click", e => {
     const o = e.target.closest("[data-open]");
     const d = e.target.closest("[data-rdel]");
-    if (o) restoreReg(+o.dataset.open);
-    else if (d){ saveReg(loadReg().filter(x => x.id !== +d.dataset.rdel)); renderReg(); }
+    const s = e.target.closest("[data-send]");
+    const x = e.target.closest("[data-exp]");
+    const f = e.target.closest("[data-fmt]");
+    if (f) return exportRegEntry(+f.dataset.id, f.dataset.fmt);
+    if (o) return restoreReg(+o.dataset.open);
+    if (s) return sendRegEntry(+s.dataset.send);
+    if (x){
+      document.querySelectorAll(".regmenu").forEach(m => { if (m.dataset.menu !== x.dataset.exp) m.classList.add("hide"); });
+      document.querySelector('[data-menu="' + x.dataset.exp + '"]').classList.toggle("hide");
+      return;
+    }
+    if (d){ saveReg(loadReg().filter(x2 => x2.id !== +d.dataset.rdel)); renderReg(); }
   });
   document.getElementById("sbv-regcheck").onclick = runCheck;
   document.getElementById("sbv-mpick").onclick = () => document.getElementById("sbv-mfile").click();
@@ -896,7 +960,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay12";
+  window.__sbvdmV = "sberpay13";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
