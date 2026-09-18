@@ -105,6 +105,55 @@ async function updateCommissionMembers(commId, mem){
     return { total: mem.length, added, upgraded, deleted, updated };
   });
 }
+/* ---------- защита счетов от экспоненциальной записи (4,08E+19) ---------- */
+function expandNumber(n){
+  try { return n.toLocaleString("fullwide", { useGrouping: false }); }
+  catch(e){
+    let s = String(n);
+    if (/e/i.test(s)){
+      const parts = s.split(/e/i);
+      const a = parts[0].replace(".", "");
+      const p = +parts[1] - (parts[0].includes(".") ? parts[0].split(".")[1].length : 0);
+      s = a + "0".repeat(Math.max(p, 0));
+    }
+    return s;
+  }
+}
+function cellFix(v){
+  if (typeof v === "number" && isFinite(v) && Math.abs(v) >= 1e15)
+    return { v: expandNumber(v), fixed: true, sci: true };
+  const m = String(v ?? "").trim().match(/^(\d{1,3}(?:[.,]\d+)?)\s*[eE]\s*\+?\s*(\d{1,3})$/);
+  if (m){
+    const n = Number(m[1].replace(",", ".")) * Math.pow(10, +m[2]);
+    if (isFinite(n)) return { v: expandNumber(n), fixed: true, sci: true };
+  }
+  return { v, fixed: false, sci: false };
+}
+function matrixCellFix(matrix){
+  let fixed = 0;
+  const out = matrix.map(row => row.map(c => {
+    const f = cellFix(c === undefined || c === null ? "" : c);
+    if (f.fixed) fixed++;
+    return f.v;
+  }));
+  return { matrix: out, fixed };
+}
+function fixAccounts(rows){
+  let fixed = 0, sci = 0;
+  const out = rows.map(r => {
+    const acc = String(r.account ?? "");
+    if (!/^\d{20}$/.test(acc)){
+      const f = cellFix(acc);
+      if (f.fixed){
+        const digitsOnly = String(f.v).replace(/\D/g, "");
+        if (digitsOnly !== acc){ fixed++; if (f.sci) sci++; return { ...r, account: digitsOnly, __sci: true }; }
+      }
+    }
+    return r;
+  });
+  return { rows: out, fixed, sci };
+}
+
 /* ---------- умное распознавание: контент-анализ + заголовки ---------- */
 function colEvidence(rows, i, tests){
   let acc = 0, amt = 0, fio = 0, uik = 0;
@@ -283,7 +332,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay19</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay20</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -485,6 +534,9 @@ function parseTextLines(text){
   return rows;
 }
 function loadMatrix(headers, matrix, mapping, fileName, kind, infoText){
+  const fx = matrixCellFix(matrix);
+  matrix = fx.matrix;
+  const fa = { fixed: 0 };
   S.headers = headers; S.matrix = matrix; S.fileName = fileName; S.kind = kind;
   if (mapping){ S.mapping = mapping; S.confidence = 100; }
   else {
@@ -500,10 +552,12 @@ function loadMatrix(headers, matrix, mapping, fileName, kind, infoText){
     cf.classList.remove("hide");
     cf.textContent = (S.fromMemory ? "Применено сохранённое сопоставление · " : "Умное распознавание · уверенность: " + S.confidence + "%") + (S.confidence < 60 && !S.fromMemory ? " — проверьте колонки вручную" : "");
   }
-  document.getElementById("sbv-fileinfo").textContent = infoText;
+  document.getElementById("sbv-fileinfo").textContent = infoText + (fx.fixed ? ` · исправлено ячеек (экспоненциальная запись): ${fx.fixed}` : "");
   renderMap();
   document.getElementById("sbv-mapcard").classList.remove("hide");
   applyMapping();
+  const fa2 = fixAccounts(S.rows);
+  if (fa2.fixed){ S.rows = fa2.rows; renderTable(); if (fa2.sci) document.getElementById("sbv-fileinfo").textContent += ` · счетов восстановлено из E+ записи: ${fa2.sci} (сверьте вручную)`; }
   pushRegistry();
   autoExcelSave();
 }
@@ -553,6 +607,14 @@ async function onFile(file){
     const ws = wb.Sheets[sn];
     if (!ws) continue;
     const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+    const rawM = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+    for (let r = 0; r < matrix.length; r++){
+      for (let c = 0; c < matrix[r].length; c++){
+        const rv = rawM[r] ? rawM[r][c] : undefined;
+        if (typeof rv === "number" && isFinite(rv) && Math.abs(rv) >= 1e15 && String(matrix[r][c]).replace(/\D/g, "").length !== 20)
+          matrix[r][c] = expandNumber(rv);
+      }
+    }
     if (matrix.length < 2) continue;
     const first = matrix[0].map(c => String(c).trim());
     const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
@@ -617,8 +679,24 @@ function exportRows(){
 function guardRows(rows){
   if (!rows.length){ alert("Ведомость пустая."); return false; }
   let bad = 0; for (const r of rows) if (rowProblems(r).length) bad++;
-  if (bad){ alert("В выбранной ведомости " + bad + " строк с ошибками (счёт ≠ 20 цифр, пустая сумма/фамилия). Исправьте через «Правка» в реестре."); return false; }
+  if (bad){ alert("Проверка выгрузки: в ведомости " + bad + " строк с ошибками — номер счета должен быть 20 цифр (не экспоненциальная запись), сумма и фамилия не пустые. Исправьте через «Правка» в реестре."); return false; }
+  const sci = rows.filter(r => r.__sci).length;
+  if (sci && !confirm("Проверка выгрузки: " + sci + " счет(ов) восстановлены из экспоненциальной записи (вида 4,08E+19) — точность последних цифр не гарантирована. Сверьте их с первоисточником. Продолжить выгрузку?")) return false;
   return true;
+}
+function exportRowsFixed(){
+  const el = document.getElementById("sbv-expreg");
+  const id = el ? +el.value : 0;
+  const fx = fixAccounts(exportRows());
+  if (fx.fixed){
+    if (id){
+      const reg = loadReg();
+      const e = reg.find(x => x.id === id);
+      if (e){ e.rows = fx.rows; saveReg(reg); renderReg(); }
+    }
+    document.getElementById("sbv-fileinfo").textContent = "Автопроверка выгрузки: исправлено номеров счетов (E+ запись → полный номер): " + fx.fixed + (fx.sci ? " — сверьте восстановленные вручную" : "");
+  }
+  return fx.rows;
 }
 function guard(){
   const t = totals();
@@ -837,6 +915,14 @@ async function extractRows(file){
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new Error("в файле нет листов");
   const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  const rawM = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+  for (let r = 0; r < matrix.length; r++){
+    for (let c = 0; c < matrix[r].length; c++){
+      const rv = rawM[r] ? rawM[r][c] : undefined;
+      if (typeof rv === "number" && isFinite(rv) && Math.abs(rv) >= 1e15 && String(matrix[r][c]).replace(/\D/g, "").length !== 20)
+        matrix[r][c] = expandNumber(rv);
+    }
+  }
   if (!matrix.length) throw new Error("файл пустой");
   const first = matrix[0].map(c => String(c).trim());
   const looksHeader = first.some(c => /[A-Za-zА-Яа-яЁё]/.test(c));
@@ -980,7 +1066,16 @@ function csvTextFrom(rows){
 function restoreReg(id){
   const e = loadReg().find(x => x.id === id);
   if (!e) return;
-  S.rows = JSON.parse(JSON.stringify(e.rows || []));
+  let rows = JSON.parse(JSON.stringify(e.rows || []));
+  const fx = fixAccounts(rows);
+  if (fx.fixed){
+    rows = fx.rows;
+    e.rows = rows;
+    saveReg(loadReg().map(x => x.id === id ? e : x));
+    renderReg();
+  }
+  S.rows = rows;
+  if (fx.fixed) setTimeout(() => { document.getElementById("sbv-fileinfo").textContent = `Проверка при открытии: исправлено номеров счетов (E+ запись → полный номер): ${fx.fixed}` + (fx.sci ? " — восстановленные из экспоненциальной записи счета сверьте с источником" : ""); }, 50);
   S.fileName = e.name; S.appliedSum = parseFloat(e.sum) || 0;
   document.getElementById("sbv-tablecard").classList.remove("hide");
   document.getElementById("sbv-exportcard").classList.remove("hide");
@@ -1157,7 +1252,11 @@ export function mount(el){
     const tr = e.target.closest("tr"); if (!tr) return;
     const i = +tr.dataset.i, k = e.target.dataset.k; if (k == null) return;
     S.rows[i][k] = e.target.value;
-    if (k === "account") S.rows[i][k] = digits(e.target.value);
+    if (k === "account"){
+      const f = cellFix(e.target.value);
+      S.rows[i][k] = f.fixed ? String(f.v).replace(/\D/g, "") : digits(e.target.value);
+      if (f.sci) S.rows[i].__sci = true;
+    }
     if (k === "amount" || k === "deduct"){
       const n = parseFloat(String(e.target.value).replace(",", "."));
       S.rows[i][k] = isFinite(n) ? String(e.target.value).replace(",", ".") : e.target.value;
@@ -1174,24 +1273,29 @@ export function mount(el){
       const n = parseFloat(String(e.target.value).replace(/[\s\u00A0]/g, "").replace(",", "."));
       if (isFinite(n)){ S.rows[i][k] = n.toFixed(2); e.target.value = (+n.toFixed(2)).toLocaleString("ru-RU", { minimumFractionDigits: 2 }); updateTotals(); }
     }
-    if (k === "account"){ const d = digits(e.target.value); S.rows[i][k] = d; e.target.value = d; }
+    if (k === "account"){
+      const f = cellFix(e.target.value);
+      const d = f.fixed ? String(f.v).replace(/\D/g, "") : digits(e.target.value);
+      S.rows[i][k] = d; e.target.value = d;
+      if (f.sci) S.rows[i].__sci = true;
+    }
   });
   document.getElementById("sbv-tbody").addEventListener("click", e => {
     const b = e.target.closest("[data-del]"); if (!b) return;
     S.rows.splice(+b.dataset.del, 1); renderTable();
   });
   document.getElementById("sbv-csv1251").onclick = () => {
-    const rows = exportRows(); if (!guardRows(rows)) return;
+    const rows = exportRowsFixed(); if (!guardRows(rows)) return;
     const nm = exportName(rows);
     download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvText(rows))], { type: "application/csv;charset=windows-1251" }));
   };
   document.getElementById("sbv-csvutf").onclick = () => {
-    const rows = exportRows(); if (!guardRows(rows)) return;
+    const rows = exportRowsFixed(); if (!guardRows(rows)) return;
     const nm = exportName(rows);
     download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(["\uFEFF" + csvText(rows)], { type: "application/csv;charset=utf-8" }));
   };
   document.getElementById("sbv-xlsx").onclick = () => {
-    const rows = exportRows(); if (!guardRows(rows)) return;
+    const rows = exportRowsFixed(); if (!guardRows(rows)) return;
     const nm = exportName(rows);
     download(`ved_SBER_${nm}_${stamp()}.xlsx`, xlsxBlob(rows));
   };
@@ -1205,7 +1309,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay19";
+  window.__sbvdmV = "sberpay20";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
