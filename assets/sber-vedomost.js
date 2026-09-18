@@ -175,11 +175,29 @@ const CSS = `
 .sbv .totals{font-size:13.5px;font-weight:700;margin-top:10px}
 .sbv .totals .ok{color:#2e9e5b}.sbv .totals .err{color:#d33}
 .sbv .hint{font-size:12px;opacity:.6;margin-top:6px}
-.sbv .hide{display:none}`;
+.sbv .hide{display:none}
+.sbv-man ol{padding-left:20px;margin:8px 0}
+.sbv-man li{margin-bottom:6px;font-size:13px}
+.sbv-man p{font-size:13px;margin:6px 0}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк</h2>
+<h2>Ведомость Сбербанк <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
+
+<div class="card hide sbv-man" id="sbv-man">
+  <h3>Как работать с вкладкой</h3>
+  <p><b>Назначение:</b> любой Excel/CSV со списком выплат превращается в ведомость для импорта в Сбер Бизнес Онлайн — без ручного набора.</p>
+  <ol>
+    <li><b>Загрузите файл</b> (.xlsx, .xls, .csv — первый лист, колонки в любом порядке). Ведомость сформируется автоматически.</li>
+    <li><b>Проверьте распознавание.</b> Если колонки определились неверно — поправьте выпадающие списки и нажмите «Применить» ещё раз.</li>
+    <li><b>Обновите справочник УИК (необязательно):</b> выберите комиссию → «Обновить состав» — демонстрационные данные заменятся этим списком.</li>
+    <li><b>Проверьте ведомость:</b> тап по ячейке — правка. 🔴 красная строка — ошибка (счёт ≠ 20 цифр, пустая сумма/фамилия), выгрузка заблокирована. 🟡 жёлтая — дубль счёта. Внизу — итоги: получателей и сумма; сверьте со сметой до копейки.</li>
+    <li><b>«⬇ Выгрузить в Сбербанк»</b> — файл CSV Windows-1251 (разделитель «;»), родной формат «Ведомость на счета». Запасные варианты: CSV UTF-8, XLSX, образец.</li>
+    <li><b>Импорт в банк:</b> Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости → сверьте количество получателей и итог по предпросмотру → подпишите.</li>
+  </ol>
+  <p><b>Правила файла:</b> счёт — ровно 20 цифр (в Сбербанке, в рублях); сумма — с точкой: 15000.00; удержаний нет — стоит 0.00.</p>
+  <p><b>Проблемы:</b> кракозябры → качайте CSV-1251 (кнопка по умолчанию); колонки съехали → разделитель «;»; «счёт не найден» → не 20 цифр или другой банк (для карт чужих банков — «Массовые переводы», другой шаблон).</p>
+</div>
 
 <div class="card">
   <h3><span class="num">1</span>Загрузите предварительный список</h3>
@@ -345,6 +363,7 @@ export function mount(el){
   }
   el.innerHTML = `<div class="sbv">${TPL}</div>`;
   document.getElementById("sbv-pick").onclick = () => document.getElementById("sbv-file").click();
+  document.getElementById("sbv-manbtn").onclick = () => document.getElementById("sbv-man").classList.toggle("hide");
   document.getElementById("sbv-file").onchange = e => { if (e.target.files[0]) onFile(e.target.files[0]); };
   document.getElementById("sbv-map").onchange = e => {
     const k = e.target.dataset.k;
