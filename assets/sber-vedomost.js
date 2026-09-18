@@ -194,7 +194,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay13</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay14</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -391,6 +391,14 @@ function loadMatrix(headers, matrix, mapping, fileName, kind, infoText){
   document.getElementById("sbv-mapcard").classList.remove("hide");
   applyMapping();
   pushRegistry();
+  autoExcelSave();
+}
+function autoExcelSave(){
+  try{
+    if (!S.rows.length) return;
+    const nm = (S.fileName || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 40) || "vedomost";
+    download(`ved_SBER_${nm}_${stamp()}.xlsx`, xlsxBlob());
+  }catch(e){}
 }
 async function onImage(file){
   const info = document.getElementById("sbv-fileinfo");
@@ -583,6 +591,15 @@ async function onMasterFile(file){
     M.name = file.name; M.loaded = true;
     renderMaster();
     info.textContent = `${file.name} · ${M.rows.length} строк${ocr ? " · OCR (сверьте вручную)" : ""} — содержание и название можно править ниже`;
+    try{
+      const nm = (file.name || "spisok").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 40) || "spisok";
+      const aoa = [["ФИО", "Счет", "Сумма"], ...M.rows.map(r => [r.fio, r.account, r.amount])];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{ wch: 30 }, { wch: 22 }, { wch: 14 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Список");
+      download(`spisok_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    }catch(e){}
   }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
 }
 
@@ -960,7 +977,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay13";
+  window.__sbvdmV = "sberpay14";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
