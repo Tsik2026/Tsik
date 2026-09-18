@@ -306,6 +306,8 @@ const CSS = `
 .sbv tr.badrow td input{background:rgba(220,60,50,.13)}
 .sbv tr.duprow td input{background:rgba(240,170,30,.13)}
 .sbv .del{border:0;background:none;color:inherit;opacity:.5;cursor:pointer;font-size:15px;padding:2px 6px}
+.sbv .delbtn{background:rgba(220,60,50,.15);color:inherit;border:1px solid rgba(220,60,50,.4)}
+.sbv .delbtn:hover{background:rgba(220,60,50,.3);opacity:1}
 .sbv .del:hover{opacity:1}
 .sbv .totals{font-size:13.5px;font-weight:700;margin-top:10px}
 .sbv .totals .ok{color:#2e9e5b}.sbv .totals .err{color:#d33}
@@ -332,7 +334,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay21</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay22</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -1013,7 +1015,7 @@ function renderReg(){
       <button type="button" class="ghost" data-open="${e.id}">Правка</button>
       <button type="button" class="ghost" data-send="${e.id}">Отправить</button>
       <button type="button" class="ghost" data-exp="${e.id}">Экспорт</button>
-      <button type="button" class="del" data-rdel="${e.id}" title="Удалить из реестра">×</button>
+      <button type="button" class="ghost delbtn" data-rdel="${e.id}" title="Удалить из реестра">Удалить</button>
     </div>
     <div class="regmenu hide" data-menu="${e.id}">
       <button type="button" data-fmt="csv1251" data-id="${e.id}">CSV Сбербанк Онлайн (Windows-1251)</button>
@@ -1326,7 +1328,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay21";
+  window.__sbvdmV = "sberpay22";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
