@@ -332,7 +332,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay20</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay21</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -354,7 +354,8 @@ const TPL = `
 
 <div class="card" id="sbv-regcard">
   <h3>Реестр загруженных файлов
-    <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button></h3>
+    <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button>
+    <button type="button" class="ghost" id="sbv-regclear" style="float:right;padding:4px 10px;font-size:12px;margin-right:6px">Очистить реестр</button></h3>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
   <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
 </div>
@@ -1163,10 +1164,26 @@ export function mount(el){
       document.querySelector('[data-menu="' + x.dataset.exp + '"]').classList.toggle("hide");
       return;
     }
-    if (d){ saveReg(loadReg().filter(x2 => x2.id !== +d.dataset.rdel)); renderReg(); }
+    if (d){
+      const reg0 = loadReg();
+      const en0 = reg0.find(x2 => x2.id === +d.dataset.rdel);
+      if (en0 && confirm(`Удалить из реестра «${en0.name}» (${en0.count} чел., ${en0.sum} ₽)?`)){
+        saveReg(reg0.filter(x2 => x2.id !== +d.dataset.rdel));
+        renderReg();
+      }
+    }
   });
   refreshMergeBtn();
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  document.getElementById("sbv-regclear").onclick = () => {
+    const reg0 = loadReg();
+    if (!reg0.length){ return; }
+    if (confirm(`Удалить все ${reg0.length} записей реестра? Действие необратимо.`)){
+      saveReg([]);
+      renderReg();
+      document.getElementById("sbv-checkres").classList.add("hide");
+    }
+  };
   document.getElementById("sbv-tpick").onclick = () => document.getElementById("sbv-tfile").click();
   document.getElementById("sbv-tfile").onchange = e => { const f = e.target.files[0]; if (f) onFile(f); };
   document.getElementById("sbv-treg").onchange = e => { if (e.target.value) restoreReg(+e.target.value); };
@@ -1309,7 +1326,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay20";
+  window.__sbvdmV = "sberpay21";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
