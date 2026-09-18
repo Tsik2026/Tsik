@@ -14,6 +14,7 @@ import EditMode from './components/app/EditMode';
 import Dashboard from './sections/Dashboard';
 import Estimate from './sections/Estimate';
 import Payroll from './sections/Payroll';
+import SberPay from './sections/SberPay';
 import Operations from './sections/Operations';
 import Advances from './sections/Advances';
 import Reports from './sections/Reports';
@@ -163,6 +164,7 @@ export default function App() {
         {view === 'dashboard' && <Dashboard {...sectionProps} />}
         {view === 'estimate' && <Estimate {...sectionProps} />}
         {view === 'payroll' && <Payroll {...sectionProps} />}
+        {view === 'sberpay' && <SberPay />}
         {view === 'operations' && <Operations {...sectionProps} />}
         {view === 'advances' && <Advances {...sectionProps} />}
         {view === 'reports' && <Reports {...sectionProps} />}
