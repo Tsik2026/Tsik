@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay20';
+const VER = 'sberpay21';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -55,6 +55,45 @@ function mapRole(v: unknown): Role {
   if (/секретар/.test(s)) return 'secretary';
   return 'member';
 }
+// ── Защита счетов от экспоненциальной записи (4,08E+19) ─────────────
+function expandNumber(n: number): string {
+  try { return n.toLocaleString('fullwide', { useGrouping: false }); }
+  catch {
+    let s = String(n);
+    if (/e/i.test(s)) {
+      const parts = s.split(/e/i);
+      const a = parts[0].replace('.', '');
+      const p = +parts[1] - (parts[0].includes('.') ? parts[0].split('.')[1].length : 0);
+      s = a + '0'.repeat(Math.max(p, 0));
+    }
+    return s;
+  }
+}
+function cellFix(v: unknown): { v: unknown; fixed: boolean; sci: boolean } {
+  if (typeof v === 'number' && isFinite(v) && Math.abs(v) >= 1e15) return { v: expandNumber(v), fixed: true, sci: true };
+  const m = String(v ?? '').trim().match(/^(\d{1,3}(?:[.,]\d+)?)\s*[eE]\s*\+?\s*(\d{1,3})$/);
+  if (m) {
+    const n = Number(m[1].replace(',', '.')) * Math.pow(10, +m[2]);
+    if (isFinite(n)) return { v: expandNumber(n), fixed: true, sci: true };
+  }
+  return { v, fixed: false, sci: false };
+}
+function fixAccounts(rows: VedRow[]): { rows: (VedRow & { __sci?: boolean })[]; fixed: number; sci: number } {
+  let fixed = 0, sci = 0;
+  const out = rows.map((r) => {
+    const acc = String(r.account ?? '');
+    if (!/^\d{20}$/.test(acc)) {
+      const f = cellFix(acc);
+      if (f.fixed) {
+        const d = String(f.v).replace(/\D/g, '');
+        if (d !== acc) { fixed++; if (f.sci) sci++; return { ...r, account: d, __sci: true }; }
+      }
+    }
+    return r;
+  });
+  return { rows: out, fixed, sci };
+}
+
 // ── Умное распознавание: контент-анализ + заголовки ──────────────────
 function colEvidence(rows: string[][], i: number, tests: number) {
   let acc = 0, amt = 0, fio = 0, uik = 0;
@@ -227,7 +266,15 @@ async function extractRows(file: File): Promise<{ rows: string[][]; headers: str
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new Error('в файле нет листов');
-  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '', raw: false });
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '', raw: false }) as unknown as unknown[][];
+  const rawM = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '', raw: true }) as unknown as unknown[][];
+  for (let r = 0; r < matrix.length; r++) {
+    for (let c = 0; c < matrix[r].length; c++) {
+      const rv = rawM[r] ? rawM[r][c] : undefined;
+      if (typeof rv === 'number' && isFinite(rv) && Math.abs(rv) >= 1e15 && String(matrix[r][c]).replace(/\D/g, '').length !== 20)
+        matrix[r][c] = expandNumber(rv);
+    }
+  }
   if (!matrix.length) throw new Error('файл пустой');
   const first = matrix[0].map((c) => String(c).trim());
   const looksHeader = first.some((c) => /[A-Za-zА-Яа-яЁё]/.test(c));
