@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay32</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay33</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -1233,7 +1233,11 @@ function downloadAoa(aoa, name){
 }
 function downloadControlForm(kind){
   kind = kind || activeTemplate();
-  downloadAoa(kind === "sber" ? buildSberAoa() : buildCommAoa(kind), `kontrolnaya_forma_${kind.toUpperCase()}_${stamp()}.xlsx`);
+  const fileKind = kind === "sber" ? "SBER" : kind.toUpperCase();
+  fetch(`./assets/forms/kontrolnaya_forma_${fileKind}.xlsx`, { cache: "no-store" })
+    .then(r => { if (!r.ok) throw new Error("not found"); return r.blob(); })
+    .then(blob => download(`kontrolnaya_forma_${fileKind}_${stamp()}.xlsx`, blob))
+    .catch(() => downloadAoa(kind === "sber" ? buildSberAoa() : buildCommAoa(kind), `kontrolnaya_forma_${fileKind}_${stamp()}.xlsx`));
 }
 function previewControlForm(kind){
   kind = kind || activeTemplate();
@@ -1620,7 +1624,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay32";
+  window.__sbvdmV = "sberpay33";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
