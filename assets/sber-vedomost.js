@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay28</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay29</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -1354,8 +1354,36 @@ function runCheck(){
 }
 
 /* ---------- публичный API ---------- */
+/* ---------- сторож версии: обновление без участия пользователя ---------- */
+let watchdogBusy = false;
+async function versionWatchdog(){
+  if (watchdogBusy) return;
+  watchdogBusy = true;
+  try{
+    const r = await fetch("sw.js", { cache: "no-store" });
+    const t = await r.text();
+    const m = t.match(/sberpay(\d+)/);
+    if (!m) return;
+    const remote = +m[1];
+    const local = parseInt(String(window.__sbvdmV || "").replace(/\D/g, ""), 10) || 0;
+    if (remote <= local) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg){
+      try { await reg.update(); } catch(e){}
+      if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+    }
+    const mod = await import(`./sber-vedomost.js?v=sberpay${remote}`);
+    if (window.__sbvdmUnmount) { try { window.__sbvdmUnmount(); } catch(e){} }
+    window.__sbvdmV = "sberpay" + remote;
+    if (window.__sbvdmHost) mod.mount(window.__sbvdmHost);
+  } catch(e){ /* офлайн или ошибка — остаёмся на текущей версии */ }
+  finally { watchdogBusy = false; }
+}
+
 export function mount(el){
   root = el;
+  window.__sbvdmHost = el;
+  versionWatchdog();
   if (!document.getElementById("sbv-style")){
     const st = document.createElement("style");
     st.id = "sbv-style"; st.textContent = CSS;
@@ -1562,7 +1590,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay28";
+  window.__sbvdmV = "sberpay29";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
