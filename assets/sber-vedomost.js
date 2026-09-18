@@ -334,7 +334,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay22</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay23</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -357,7 +357,8 @@ const TPL = `
 <div class="card" id="sbv-regcard">
   <h3>Реестр загруженных файлов
     <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button>
-    <button type="button" class="ghost" id="sbv-regclear" style="float:right;padding:4px 10px;font-size:12px;margin-right:6px">Очистить реестр</button></h3>
+    <button type="button" class="ghost" id="sbv-regclear" style="float:right;padding:4px 10px;font-size:12px;margin-right:6px">Очистить реестр</button>
+    <button type="button" class="ghost" id="sbv-regform" style="float:right;padding:4px 10px;font-size:12px;margin-right:6px">Контрольная форма</button></h3>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
   <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
 </div>
@@ -1048,6 +1049,37 @@ function exportRegEntry(id, fmt){
     download(`spisok_${nm}_${stamp()}.txt`, new Blob(["\uFEFF" + txt], { type: "text/plain;charset=utf-8" }));
   }
 }
+function downloadControlForm(){
+  const aoa = [
+    ["ПАО СБЕРБАНК"],
+    ["КОНТРОЛЬНАЯ ФОРМА ВЕДОМОСТИ"],
+    [],
+    ["Организация:", "", "", "№ ведомости:", "", "Дата составления:", ""],
+    ["Счёт организации:", "", "", "ИНН:", "", "КПП:", ""],
+    [],
+    ["№ п/п", "Фамилия", "Имя", "Отчество", "№ счёта получателя", "Сумма, руб.", "Подпись получателя"],
+  ];
+  for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
+  aoa.push(
+    [],
+    ["", "", "", "", "ИТОГО:", "", ""],
+    [],
+    ["Сумма прописью:", "", "", "", "", "", ""],
+    [],
+    ["Руководитель организации: _________ / ________________ /", "", "", "", "Главный бухгалтер: _________ / ________________ /", "", ""],
+    [],
+    ["М.П.", "", "", "", "", "", ""],
+    [],
+    ["Примечание: форма соответствует требованиям Сбербанка к оформлению ведомости на выплату (зарплатный проект)."],
+    ["Счёт получателя — 20 цифр, текстовый формат; сумма — в рублях с копейками, разделитель точка."]
+  );
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 6 }, { wch: 18 }, { wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 20 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Контрольная форма");
+  download(`kontrolnaya_forma_SBER_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+}
+
 async function sendRegEntry(id){
   const e = regEntryRows(id); if (!e) return;
   const rows = e.rows || [];
@@ -1177,6 +1209,7 @@ export function mount(el){
   });
   refreshMergeBtn();
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  document.getElementById("sbv-regform").onclick = downloadControlForm;
   document.getElementById("sbv-regclear").onclick = () => {
     const reg0 = loadReg();
     if (!reg0.length){ return; }
@@ -1328,7 +1361,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay22";
+  window.__sbvdmV = "sberpay23";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
