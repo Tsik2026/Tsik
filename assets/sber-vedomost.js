@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay30</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay31</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -362,6 +362,18 @@ const TPL = `
   </ol>
   <p><b>Правила файла:</b> счёт — ровно 20 цифр (в Сбербанке, в рублях); сумма — с точкой: 15000.00; удержаний нет — стоит 0.00.</p>
   <p><b>Проблемы:</b> кракозябры → качайте CSV-1251 (кнопка по умолчанию); колонки съехали → разделитель «;»; «счёт не найден» → не 20 цифр или другой банк (для карт чужих банков — «Массовые переводы», другой шаблон).</p>
+</div>
+
+<div class="card" id="sbv-uploadcard">
+  <h3>Загрузить ведомость</h3>
+  <div class="btnrow" style="margin-top:0">
+    <label class="filebtn"><input type="file" id="sbv-ufull" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" id="sbv-upick">Выбрать файл</button></label>
+    <select id="sbv-ureg" style="flex:1;min-width:150px"><option value="">— или из реестра —</option></select>
+    <button type="button" class="ghost" id="sbv-usample">Образец</button>
+    <button type="button" class="ghost" id="sbv-uview">Просмотр формы</button>
+  </div>
+  <div class="dropzone" id="sbv-udrop">⬇ Перетащите файл ведомости сюда — распознаётся автоматически (Excel, CSV, TXT, фото)</div>
+  <div class="fileinfo">После загрузки автоматически: умное распознавание → проверка и исправление счетов → ведомость на правку → сохранение в Excel и реестр</div>
 </div>
 
 <div class="card" id="sbv-regcard">
@@ -923,6 +935,14 @@ async function onMasterFile(file){
   }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
 }
 
+function fillUregSelect(){
+  const sel = document.getElementById("sbv-ureg");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— или из реестра —</option>' +
+    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел.</option>`).join("");
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
 function fillTRegSelect(){
   const sel = document.getElementById("sbv-treg");
   if (!sel) return;
@@ -1075,6 +1095,7 @@ function renderReg(){
   fillUikRegSelect();
   fillExpRegSelect();
   fillTRegSelect();
+  fillUregSelect();
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
@@ -1449,6 +1470,15 @@ export function mount(el){
   document.getElementById("sbv-tpick").onclick = () => document.getElementById("sbv-tfile").click();
   document.getElementById("sbv-tfile").onchange = e => { const f = e.target.files[0]; if (f) onFile(f); };
   document.getElementById("sbv-treg").onchange = e => { if (e.target.value) restoreReg(+e.target.value); };
+  document.getElementById("sbv-upick").onclick = () => document.getElementById("sbv-ufull").click();
+  document.getElementById("sbv-ufull").onchange = e => { const f = e.target.files[0]; if (f) onFile(f); };
+  document.getElementById("sbv-ureg").onchange = e => { if (e.target.value) restoreReg(+e.target.value); };
+  document.getElementById("sbv-usample").onclick = () => document.getElementById("sbv-sample").click();
+  document.getElementById("sbv-uview").onclick = () => previewControlForm(document.getElementById("sbv-formsel").value);
+  const udz = document.getElementById("sbv-udrop");
+  ["dragover", "dragenter"].forEach(ev => udz.addEventListener(ev, e => { e.preventDefault(); udz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => udz.addEventListener(ev, e => { e.preventDefault(); udz.classList.remove("over"); }));
+  udz.addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) onFile(f); });
   const dz = document.getElementById("sbv-drop");
   ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
@@ -1590,7 +1620,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay30";
+  window.__sbvdmV = "sberpay31";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
