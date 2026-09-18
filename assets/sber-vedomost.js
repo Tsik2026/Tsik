@@ -214,9 +214,12 @@ const TPL = `
 </div>
 
 <div class="card hide" id="sbv-exportcard">
-  <h3><span class="num">4</span>Сформировать и выгрузить</h3>
+  <h3><span class="num">4</span>Выгрузка в Сбербанк</h3>
   <div class="btnrow">
-    <button type="button" id="sbv-csv1251">CSV Windows-1251 (для СББОЛ)</button>
+    <button type="button" id="sbv-csv1251" style="font-size:15px;padding:12px 22px">⬇ Выгрузить в Сбербанк</button>
+  </div>
+  <div class="hint">Файл CSV (Windows-1251) в формате «Ведомость на счета» — готов к импорту: Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости.</div>
+  <div class="btnrow" style="margin-top:4px">
     <button type="button" class="ghost" id="sbv-csvutf">CSV UTF-8</button>
     <button type="button" class="ghost" id="sbv-xlsx">XLSX</button>
     <button type="button" class="ghost" id="sbv-sample">Скачать образец</button>
@@ -285,8 +288,7 @@ async function onFile(file){
   document.getElementById("sbv-fileinfo").textContent = `${file.name} · ${S.matrix.length} строк · лист «${wb.SheetNames[0]}»`;
   renderMap();
   document.getElementById("sbv-mapcard").classList.remove("hide");
-  document.getElementById("sbv-tablecard").classList.add("hide");
-  document.getElementById("sbv-exportcard").classList.add("hide");
+  applyMapping();
 }
 function applyMapping(){
   const get = (row, key) => { const i = S.mapping[key]; return (i == null || i < 0) ? "" : row[i]; };
