@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay28';
+const VER = 'sberpay34';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -70,31 +70,6 @@ function expandNumber(n: number): string {
     return s;
   }
 }
-function cellFix(v: unknown): { v: unknown; fixed: boolean; sci: boolean } {
-  if (typeof v === 'number' && isFinite(v) && Math.abs(v) >= 1e15) return { v: expandNumber(v), fixed: true, sci: true };
-  const m = String(v ?? '').trim().match(/^(\d{1,3}(?:[.,]\d+)?)\s*[eE]\s*\+?\s*(\d{1,3})$/);
-  if (m) {
-    const n = Number(m[1].replace(',', '.')) * Math.pow(10, +m[2]);
-    if (isFinite(n)) return { v: expandNumber(n), fixed: true, sci: true };
-  }
-  return { v, fixed: false, sci: false };
-}
-function fixAccounts(rows: VedRow[]): { rows: (VedRow & { __sci?: boolean })[]; fixed: number; sci: number } {
-  let fixed = 0, sci = 0;
-  const out = rows.map((r) => {
-    const acc = String(r.account ?? '');
-    if (!/^\d{20}$/.test(acc)) {
-      const f = cellFix(acc);
-      if (f.fixed) {
-        const d = String(f.v).replace(/\D/g, '');
-        if (d !== acc) { fixed++; if (f.sci) sci++; return { ...r, account: d, __sci: true }; }
-      }
-    }
-    return r;
-  });
-  return { rows: out, fixed, sci };
-}
-
 // ── Умное распознавание: контент-анализ + заголовки ──────────────────
 function colEvidence(rows: string[][], i: number, tests: number) {
   let acc = 0, amt = 0, fio = 0, uik = 0;
@@ -144,22 +119,6 @@ function smartMapping(headers: string[], rows: string[][]): { mapping: Record<st
 function normFioCase(fio: string): string {
   return String(fio || '').split(/\s+/).map((w) => (!w ? w : (w === w.toLowerCase() || w === w.toUpperCase()) ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(' ');
 }
-function filterSmartRows(matrix: string[][]): { rows: string[][]; totalRow: number | null } {
-  const out: string[][] = []; let totalRow: number | null = null;
-  for (const row of matrix) {
-    const nonEmpty = row.filter((c) => String(c ?? '').trim() !== '');
-    if (!nonEmpty.length) continue;
-    const first = String(row[0] ?? '').trim();
-    if (/^(итог|всего|сумма|общая|результат)/i.test(first) && nonEmpty.length <= 3) {
-      for (const c of nonEmpty) { const n = parseFloat(String(c).replace(/[\s\u00A0]/g, '').replace(',', '.')); if (isFinite(n) && n > 0) totalRow = n; }
-      continue;
-    }
-    if (nonEmpty.length === 1 && row.length > 1) continue;
-    out.push(row);
-  }
-  return { rows: out, totalRow };
-}
-
 function guessMapping(headers: string[]) {
   const used = new Set<number>(); const mapping: Record<string, number> = {};
   for (const [key, re] of RULES) {
@@ -991,14 +950,14 @@ export default function SberPay() {
         <div className="flex flex-wrap gap-2 items-center">
           <input ref={uikFileRef} type="file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUikFile(f); e.target.value = ''; }} />
           <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={() => uikFileRef.current?.click()}>Выбрать файл состава</button>
-          <select value={uState?.fromReg || 0} onChange={(e) => {
+          <select value={0} onChange={(e) => {
             const id = +e.target.value;
             const en = registry.find((x) => x.id === id);
             if (!en) { setUState(null); setUInfo('Файл не выбран'); return; }
             const rows = (en.rows || []).map((r) => [[r.last, r.first, r.middle].join(' ').trim(), r.account || '', r.amount || '']);
             if (!rows.length) { setUState(null); setUInfo('В записи реестра нет строк.'); return; }
             const col = detectUikColumn(['ФИО', 'Счет', 'Сумма'], rows);
-            setUState({ headers: ['ФИО', 'Счет', 'Сумма'], matrix: rows, mapping: { fio: 0, account: 1, amount: 2 }, uikCol: col, fileName: en.name + ' (реестр)', fromReg: id } as typeof uState & { fromReg: number });
+            setUState({ headers: ['ФИО', 'Счет', 'Сумма'], matrix: rows, mapping: { fio: 0, account: 1, amount: 2 }, uikCol: col, fileName: en.name + ' (реестр)' });
             setUInfo(`${en.name} · из реестра · ${rows.length} строк · колонка УИК: ${col >= 0 ? '"ФИО/Счет/Сумма"' : 'не найдена — выберите комиссию вручную'}`);
           }} className="flex-1 min-w-[160px] rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px]">
             <option value={0}>— или выбрать из реестра вкладки —</option>
