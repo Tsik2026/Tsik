@@ -334,7 +334,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay26</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay27</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -357,10 +357,16 @@ const TPL = `
 <div class="card" id="sbv-regcard">
   <h3>Реестр загруженных файлов</h3>
   <div class="btnrow" style="margin-top:0">
-    <button type="button" id="sbv-regform">Контрольная форма (образец Сбербанка)</button>
+    <select id="sbv-formsel" style="flex:1;min-width:170px">
+      <option value="sber">Контрольная форма — Сбербанк (ведомость)</option>
+      <option value="uik">Контрольная форма — УИК (участковая комиссия)</option>
+      <option value="tik">Контрольная форма — ТИК (территориальная комиссия)</option>
+    </select>
+    <button type="button" id="sbv-regform">Скачать форму</button>
     <button type="button" class="ghost" id="sbv-regcheck">Сверка ФИО и счетов</button>
     <button type="button" class="ghost" id="sbv-regclear">Очистить реестр</button>
   </div>
+  <div class="fileinfo" id="sbv-formnote">Выбранная форма — шаблон: при загрузке файлов суммы автозаполняются по ставкам вознаграждения ЦИК, если в файле есть должности.</div>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
   <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
 </div>
@@ -645,6 +651,7 @@ function applyMapping(){
       last: "", first: "", middle: "",
       amount: normAmount(get(row, "amount")),
       deduct: normAmount(get(row, "deduct")) || "0.00",
+      __role: mapRole(get(row, "role")),
     };
     if (S.mapping.fio != null && S.mapping.fio >= 0) Object.assign(r, splitFio(normFioCase(String(get(row, "fio")).trim())));
     else {
@@ -654,6 +661,10 @@ function applyMapping(){
     }
     return r;
   }).filter(r => r.account || r.last || parseFloat(r.amount) > 0);
+  const af = autofillByTemplate(S.rows);
+  S.rows = af.rows;
+  if (af.filled && document.getElementById("sbv-fileinfo"))
+    setTimeout(() => { document.getElementById("sbv-fileinfo").textContent += " · автозаполнение по шаблону " + af.tpl.toUpperCase() + ": сумм по ставкам ЦИК — " + af.filled; }, 60);
   S.appliedSum = S.rows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0);
   document.getElementById("sbv-tablecard").classList.remove("hide");
   document.getElementById("sbv-exportcard").classList.remove("hide");
@@ -1085,7 +1096,60 @@ function exportRegEntry(id, fmt){
     download(`spisok_${nm}_${stamp()}.txt`, new Blob(["\uFEFF" + txt], { type: "text/plain;charset=utf-8" }));
   }
 }
-function downloadControlForm(){
+const TPL_KEY = "sbv_tpl_v1";
+function activeTemplate(){
+  try { return localStorage.getItem(TPL_KEY) || "sber"; } catch(e){ return "sber"; }
+}
+function autofillByTemplate(rows){
+  const t = activeTemplate();
+  if (t === "sber") return { rows, filled: 0, tpl: t };
+  let filled = 0;
+  const out = rows.map(r => {
+    if ((!r.amount || parseFloat(r.amount) <= 0) && r.__role && RATES[r.__role]){
+      filled++;
+      return { ...r, amount: (RATES[r.__role]).toFixed(2) };
+    }
+    return r;
+  });
+  return { rows: out, filled, tpl: t };
+}
+
+function downloadControlForm(kind){
+  kind = kind || activeTemplate();
+  if (kind === "uik" || kind === "tik"){
+    const isUik = kind === "uik";
+    const aoa = [
+      ["КОНТРОЛЬНАЯ ФОРМА"],
+      [`к ведомости на выплату вознаграждения членам ${isUik ? "участковой" : "территориальной"} избирательной комиссии`],
+      [],
+      [`${isUik ? "Участковая избирательная комиссия № ______" : "Территориальная избирательная комиссия"}`, "", "", "Наименование выборов/период:", ""],
+      ["", "", "", "Дата составления:", ""],
+      [],
+      ["№ п/п", "Фамилия, имя, отчество", "Должность", "Ставка вознаграждения, руб.", "Кол-во дней (смен)", "Сумма, руб.", "Подпись"],
+    ];
+    for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
+    aoa.push(
+      [],
+      ["", "", "", "", "ИТОГО:", "", ""],
+      [],
+      ["Сумма прописью:", "", "", "", "", "", ""],
+      [],
+      ["Председатель комиссии: _________ / ________________ /", "", "", "", "Секретарь: _________ / ________________ /", "", ""],
+      [],
+      ["М.П.", "", "", "", "", "", ""],
+      [],
+      isUik ? ["Отметка ТИК о согласовании:", "", "", "", "", "", ""] : ["Согласовано с избирательной комиссией субъекта РФ:", "", "", "", "", "", ""],
+      [],
+      ["Примечание: ставки вознаграждения — по постановлению ЦИК России (председатель — 63, заместитель и секретарь — 57, член — 45 за день работы)."],
+      ["Форма — рабочий шаблон по структуре контрольных форм, применяемых при выплате вознаграждений членам избирательных комиссий; реквизиты конкретного избирательного события заполняются вручную."]
+    );
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = [{ wch: 6 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Контрольная форма");
+    download(`kontrolnaya_forma_${kind.toUpperCase()}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    return;
+  }
   const aoa = [
     ["ПАО СБЕРБАНК"],
     ["КОНТРОЛЬНАЯ ФОРМА ВЕДОМОСТИ"],
@@ -1245,7 +1309,10 @@ export function mount(el){
   });
   refreshMergeBtn();
   document.getElementById("sbv-regcheck").onclick = runCheck;
-  document.getElementById("sbv-regform").onclick = downloadControlForm;
+  const fsel = document.getElementById("sbv-formsel");
+  fsel.value = activeTemplate();
+  fsel.onchange = () => { try { localStorage.setItem(TPL_KEY, fsel.value); } catch(e){} };
+  document.getElementById("sbv-regform").onclick = () => downloadControlForm(fsel.value);
   document.getElementById("sbv-regclear").onclick = () => {
     const reg0 = loadReg();
     if (!reg0.length){ return; }
@@ -1399,7 +1466,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay26";
+  window.__sbvdmV = "sberpay27";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
