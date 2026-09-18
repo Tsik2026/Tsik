@@ -193,7 +193,7 @@ const CSS = `
 .sbv .chk li.w::before{content:"⚠";color:#c90}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay8</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay9</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -306,6 +306,7 @@ function updateTotals(){
     + (t.bad ? ` · <span class="err">ошибок: ${t.bad}</span>` : ` · <span class="ok">готово к выгрузке</span>`)
     + (S.appliedSum && Math.abs(delta) > 0.005 ? ` · Δ от загруженного: ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ₽` : "");
   ["sbv-csv1251","sbv-csvutf","sbv-xlsx"].forEach(id => document.getElementById(id).disabled = t.bad > 0);
+  saveDraft();
 }
 
 /* ---------- логика ---------- */
@@ -469,6 +470,31 @@ function xlsxBlob(){
     { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
+/* ---------- автосохранение черновика ---------- */
+const DRAFT_KEY = "sbv_draft_v1";
+let draftTimer = null;
+function saveDraft(){
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    try{
+      if (!S.rows.length){ localStorage.removeItem(DRAFT_KEY); return; }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ rows: S.rows, appliedSum: S.appliedSum, name: S.fileName, date: new Date().toLocaleString("ru-RU") }));
+    }catch(e){}
+  }, 800);
+}
+function restoreDraft(){
+  try{
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY));
+    if (d && d.rows && d.rows.length){
+      S.rows = d.rows; S.appliedSum = d.appliedSum || 0; S.fileName = d.name || "";
+      document.getElementById("sbv-tablecard").classList.remove("hide");
+      document.getElementById("sbv-exportcard").classList.remove("hide");
+      renderTable();
+      document.getElementById("sbv-fileinfo").textContent = "Восстановлен черновик от " + (d.date || "") + (d.name ? " · " + d.name : "") + " — продолжайте правку или загрузите новый файл";
+    }
+  }catch(e){}
+}
+
 /* ---------- реестр загруженных файлов ---------- */
 const REG_KEY = "sbv_registry_v1";
 function loadReg(){ try { return JSON.parse(localStorage.getItem(REG_KEY)) || []; } catch (e){ return []; } }
@@ -577,6 +603,7 @@ export function mount(el){
   });
   document.getElementById("sbv-regcheck").onclick = runCheck;
   renderReg();
+  if (!S.rows.length) restoreDraft();
   document.getElementById("sbv-file").onchange = e => { if (e.target.files[0]) onFile(e.target.files[0]); };
   document.getElementById("sbv-map").onchange = e => {
     const k = e.target.dataset.k;
@@ -661,7 +688,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay8";
+  window.__sbvdmV = "sberpay9";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
