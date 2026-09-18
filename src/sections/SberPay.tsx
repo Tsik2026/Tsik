@@ -12,6 +12,7 @@ const VER = 'sberpay12';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
+const MASTER_KEY = 'sbv_master_v1';
 
 interface VedRow { account: string; last: string; first: string; middle: string; amount: string; deduct: string; }
 interface RegEntry { id: number; name: string; date: string; kind: string; rows: VedRow[]; count: number; sum: string; bad: number; }
@@ -235,6 +236,9 @@ export default function SberPay() {
   const [appliedSum, setAppliedSum] = useState(0);
   const [manOpen, setManOpen] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
+  const [master, setMaster] = useState<{ name: string; rows: { fio: string; account: string; amount: string }[] }>(() => {
+    try { return JSON.parse(localStorage.getItem(MASTER_KEY) || '{\"name\":\"\",\"rows\":[]}'); } catch { return { name: '', rows: [] }; }
+  });
   const [registry, setRegistry] = useState<RegEntry[]>(() => loadReg());
   const [check, setCheck] = useState<Issue[] | null>(null);
   const [updCommId, setUpdCommId] = useState(0);
@@ -244,11 +248,40 @@ export default function SberPay() {
   const [uikManualId, setUikManualId] = useState(0);
   const [uikReport, setUikReport] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const masterRef = useRef<HTMLInputElement>(null);
   const uikFileRef = useRef<HTMLInputElement>(null);
   const restored = useRef(false);
 
   const commissions = useLiveQuery(() => db.commissions.toArray(), []);
   const uiks = useMemo(() => (commissions ?? []).filter((c) => c.level === 'UIK').sort((a, b) => (a.uikNo || 0) - (b.uikNo || 0)), [commissions]);
+
+  // Автосохранение общего списка
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (!master.rows.length) localStorage.removeItem(MASTER_KEY);
+        else localStorage.setItem(MASTER_KEY, JSON.stringify(master));
+      } catch { /* quota */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [master]);
+
+  async function onMasterFile(file: File) {
+    try {
+      const { rows: mtx, headers: hdrs, ocr } = await extractRows(file);
+      if (!mtx.length) throw new Error('не найдены строки с данными');
+      const mp = guessMapping(hdrs);
+      const get = (row: string[], key: string) => { const i = mp[key]; return (i == null || i < 0) ? '' : row[i]; };
+      const out = mtx.map((row) => {
+        let fio = '';
+        if (mp.fio != null && mp.fio >= 0) fio = String(get(row, 'fio')).trim();
+        else fio = [get(row, 'last'), get(row, 'first'), get(row, 'middle')].map((x) => String(x).trim()).filter(Boolean).join(' ');
+        return { fio, account: digits(get(row, 'account')), amount: normAmount(get(row, 'amount')) };
+      }).filter((r) => r.fio || r.account);
+      setMaster({ name: file.name, rows: out });
+      setInfo(`${file.name} · общий список: ${out.length} строк${ocr ? ' · OCR' : ''}`);
+    } catch (e) { setInfo('Ошибка чтения общего списка: ' + (e instanceof Error ? e.message : String(e))); }
+  }
 
   // Фоновая загрузка обновлений: баннер «Доступно обновление»
   useEffect(() => {
@@ -620,6 +653,56 @@ export default function SberPay() {
               </ul>
             )}
           </div>
+        )}
+      </Card>
+
+      {/* Общий список */}
+      <Card>
+        <CardHead>
+          <span className="flex items-center justify-between w-full">
+            Общий список
+            <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => { if (confirm('Очистить общий список?')) setMaster({ name: '', rows: [] }); }}>Очистить</button>
+          </span>
+        </CardHead>
+        <p className="text-[12px] opacity-60 mb-2">Мастер-список получателей: загрузите Excel/CSV/TXT/фото — строки распознаются автоматически. Содержание и название правятся вручную, всё сохраняется на устройстве.</p>
+        <div className="flex flex-wrap gap-2 items-center">
+          <input ref={masterRef} type="file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onMasterFile(f); e.target.value = ''; }} />
+          <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={() => masterRef.current?.click()}>Загрузить список</button>
+          <input type="text" value={master.name} onChange={(e) => setMaster((m) => ({ ...m, name: e.target.value }))} placeholder="Название файла/списка…" className="flex-1 min-w-[150px] rounded-lg border border-slate-400/40 bg-transparent px-2 py-2 text-[13.5px]" />
+        </div>
+        {master.rows.length > 0 && (
+          <>
+            <div className="overflow-x-auto mt-2">
+              <table className="w-full text-[13px] border-collapse">
+                <thead><tr className="text-[11.5px] opacity-70">
+                  <th className="border border-slate-400/25 px-1.5 py-1 text-left">№</th>
+                  <th className="border border-slate-400/25 px-1.5 py-1 text-left">ФИО</th>
+                  <th className="border border-slate-400/25 px-1.5 py-1 text-left">Счёт</th>
+                  <th className="border border-slate-400/25 px-1.5 py-1 text-left">Сумма</th>
+                  <th className="border border-slate-400/25 px-1 py-1" />
+                </tr></thead>
+                <tbody>
+                  {master.rows.map((r, i) => (
+                    <tr key={i}>
+                      <td className="border border-slate-400/25 px-1.5 py-0.5">{i + 1}</td>
+                      {(['fio', 'account', 'amount'] as const).map((k) => (
+                        <td key={k} className="border border-slate-400/25 px-0.5 py-0.5">
+                          <input type="text" inputMode={k === 'account' ? 'numeric' : k === 'amount' ? 'decimal' : undefined} value={r[k]}
+                            onChange={(e) => setMaster((m) => ({ ...m, rows: m.rows.map((x, j) => j === i ? { ...x, [k]: k === 'account' ? digits(e.target.value) : e.target.value } : x) }))}
+                            className="w-full min-w-[90px] bg-transparent px-1 py-0.5 text-[13px] rounded focus:outline focus:outline-2 focus:outline-blue-600" />
+                        </td>
+                      ))}
+                      <td className="border border-slate-400/25 px-0.5 py-0.5 text-center">
+                        <button type="button" className="px-1.5 text-[15px] opacity-50" onClick={() => setMaster((m) => ({ ...m, rows: m.rows.filter((_, j) => j !== i) }))}>×</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold mt-2" onClick={() => setMaster((m) => ({ ...m, rows: [...m.rows, { fio: '', account: '', amount: '' }] }))}>+ Строка</button>
+            <p className="text-[12px] opacity-60 mt-1.5">{master.rows.length} строк · сохранено на устройстве</p>
+          </>
         )}
       </Card>
 
