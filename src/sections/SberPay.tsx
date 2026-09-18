@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay24';
+const VER = 'sberpay25';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -694,6 +694,28 @@ export default function SberPay() {
     download(`kontrolnaya_forma_SBER_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
 
+  function saveCurrentVed() {
+    if (!rows.length) { alert('Ведомость пустая — нечего сохранять.'); return; }
+    let name = fileName || '';
+    if (!name) { name = prompt('Название для сохранения в реестре:', 'Ведомость ' + new Date().toLocaleDateString('ru-RU')) || ''; if (!name) return; setFileName(name); }
+    const tSum = rows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0);
+    const tBad = rows.filter((r) => rowProblems(r).length).length;
+    const reg = loadReg();
+    const ex = reg.find((e) => e.name === name);
+    const entry = { id: ex ? ex.id : Date.now(), name, date: new Date().toLocaleString('ru-RU'), kind: 'table', rows: rows.map((r) => ({ ...r })), count: rows.length, sum: tSum.toFixed(2), bad: tBad };
+    const next = ex ? reg.map((e) => e.id === ex.id ? entry : e) : [entry, ...reg];
+    saveReg(next); setRegistry(next);
+    setInfo((ex ? 'Запись обновлена' : 'Сохранено в реестр') + `: «${name}» · ${entry.count} чел. · ${entry.sum} ₽`);
+  }
+  function deleteCurrentVed() {
+    if (!rows.length && !fileName) { alert('Нечего удалять.'); return; }
+    if (!confirm(`Удалить текущую ведомость${fileName ? ` «${fileName}»` : ''}? Запись в реестре (если есть) тоже будет удалена.`)) return;
+    if (fileName) { const reg = loadReg().filter((e) => e.name !== fileName); if (reg.length !== loadReg().length) { saveReg(reg); setRegistry(reg); } }
+    setRows([]); setFileName(''); setAppliedSum(0);
+    localStorage.removeItem(DRAFT_KEY);
+    setInfo('Ведомость удалена. Загрузите файл или откройте запись из реестра.');
+  }
+
   function exportSourceRows(): VedRow[] {
     if (!expRegId) return rows;
     const en = registry.find((x) => x.id === expRegId);
@@ -1044,6 +1066,8 @@ export default function SberPay() {
           </div>
           <div className="flex gap-2 mt-2.5">
             <button type="button" className="rounded-lg bg-slate-500/20 px-3.5 py-2 text-[13px] font-semibold" onClick={() => setRows((rs) => [...rs, { account: '', last: '', first: '', middle: '', amount: '', deduct: '0.00' }])}>+ Строка</button>
+            <button type="button" className="rounded-lg bg-blue-600 px-3.5 py-2 text-[13px] font-semibold text-white" onClick={saveCurrentVed}>Сохранить</button>
+            <button type="button" className="rounded-lg bg-red-700/80 px-3.5 py-2 text-[13px] font-semibold text-white" onClick={deleteCurrentVed}>Удалить</button>
             <button type="button" className="rounded-lg bg-red-700/80 px-3.5 py-2 text-[13px] font-semibold text-white" onClick={() => { if (confirm('Очистить всю ведомость?')) setRows([]); }}>Очистить всё</button>
           </div>
           <p className="text-[13.5px] font-bold mt-2.5">
