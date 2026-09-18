@@ -192,7 +192,7 @@ const CSS = `
 .sbv .chk li.w::before{content:"⚠";color:#c90}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay11</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay12</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -217,6 +217,22 @@ const TPL = `
     <button type="button" class="ghost" id="sbv-regcheck" style="float:right;padding:4px 10px;font-size:12px">Сверка ФИО и счетов</button></h3>
   <div id="sbv-reglist" class="reglist"><div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div></div>
   <div class="fileinfo hide" id="sbv-checkres" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+  <h3>Общий список
+    <button type="button" class="ghost" id="sbv-mclear" style="float:right;padding:4px 10px;font-size:12px">Очистить</button></h3>
+  <div class="hint" style="margin:0 0 10px">Мастер-список получателей: загрузите Excel/CSV/TXT/фото — строки распознаются автоматически. Содержание и название правятся вручную, всё сохраняется на устройстве.</div>
+  <div class="btnrow" style="margin-top:0">
+    <label class="filebtn"><input type="file" id="sbv-mfile" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" class="ghost" id="sbv-mpick">Загрузить список</button></label>
+    <input type="text" id="sbv-mname" placeholder="Название файла/списка…" style="flex:1;min-width:150px">
+  </div>
+  <div class="tablewrap hide" id="sbv-mwrap"><table>
+    <thead><tr><th>№</th><th>ФИО</th><th>Счёт</th><th>Сумма</th><th></th></tr></thead>
+    <tbody id="sbv-mtbody"></tbody>
+  </table></div>
+  <div class="btnrow"><button type="button" class="ghost hide" id="sbv-madd">+ Строка</button></div>
+  <div class="fileinfo" id="sbv-minfo">Список не загружен</div>
 </div>
 
 <div class="card">
@@ -506,6 +522,68 @@ function restoreDraft(){
   }catch(e){}
 }
 
+/* ---------- общий список (мастер-список получателей) ---------- */
+const MASTER_KEY = "sbv_master_v1";
+const M = { name: "", rows: [], loaded: false };
+function saveMaster(){
+  clearTimeout(M.__t);
+  M.__t = setTimeout(() => {
+    try{
+      if (!M.rows.length){ localStorage.removeItem(MASTER_KEY); return; }
+      localStorage.setItem(MASTER_KEY, JSON.stringify({ name: M.name, rows: M.rows, date: new Date().toLocaleString("ru-RU") }));
+    }catch(e){}
+  }, 800);
+}
+function renderMaster(){
+  const wrap = document.getElementById("sbv-mwrap");
+  const tb = document.getElementById("sbv-mtbody");
+  const add = document.getElementById("sbv-madd");
+  const info = document.getElementById("sbv-minfo");
+  const nameEl = document.getElementById("sbv-mname");
+  if (!wrap) return;
+  nameEl.value = M.name;
+  if (!M.rows.length){ wrap.classList.add("hide"); add.classList.add("hide"); if (!M.loaded) info.textContent = "Список не загружен"; return; }
+  M.loaded = true;
+  wrap.classList.remove("hide"); add.classList.remove("hide");
+  tb.innerHTML = M.rows.map((r, i) => `<tr data-i="${i}">
+    <td>${i + 1}</td>
+    <td><input type="text" data-k="fio" value="${esc(r.fio)}"></td>
+    <td><input type="text" data-k="account" value="${esc(r.account)}" inputmode="numeric"></td>
+    <td><input type="text" data-k="amount" value="${esc(r.amount)}" inputmode="decimal"></td>
+    <td><button type="button" class="del" data-mdel="${i}" title="Удалить строку">×</button></td>
+  </tr>`).join("");
+  info.textContent = M.rows.length + " строк · сохранено на устройстве" + (M.__savedate ? " · " + M.__savedate : "");
+  saveMaster();
+}
+function restoreMaster(){
+  try{
+    const d = JSON.parse(localStorage.getItem(MASTER_KEY));
+    if (d && d.rows && d.rows.length){
+      M.name = d.name || ""; M.rows = d.rows; M.loaded = true; M.__savedate = d.date || "";
+      renderMaster();
+    }
+  }catch(e){}
+}
+async function onMasterFile(file){
+  const info = document.getElementById("sbv-minfo");
+  info.textContent = "Чтение файла…";
+  try{
+    const { rows, headers, ocr } = await extractRows(file);
+    if (!rows.length) throw new Error("не найдены строки с данными");
+    const mp = guessMapping(headers);
+    const get = (row, key) => { const i = mp[key]; return (i == null || i < 0) ? "" : row[i]; };
+    M.rows = rows.map(row => {
+      let fio = "";
+      if (mp.fio != null && mp.fio >= 0) fio = String(get(row, "fio")).trim();
+      else fio = [get(row, "last"), get(row, "first"), get(row, "middle")].map(x => String(x).trim()).filter(Boolean).join(" ");
+      return { fio, account: digits(get(row, "account")), amount: normAmount(get(row, "amount")) };
+    }).filter(r => r.fio || r.account);
+    M.name = file.name; M.loaded = true;
+    renderMaster();
+    info.textContent = `${file.name} · ${M.rows.length} строк${ocr ? " · OCR (сверьте вручную)" : ""} — содержание и название можно править ниже`;
+  }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
+}
+
 /* ---------- отдельное обновление списков УИК ---------- */
 const U = { headers: [], matrix: [], mapping: {}, uikCol: -1, fileName: "" };
 async function extractRows(file){
@@ -699,6 +777,22 @@ export function mount(el){
     else if (d){ saveReg(loadReg().filter(x => x.id !== +d.dataset.rdel)); renderReg(); }
   });
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  document.getElementById("sbv-mpick").onclick = () => document.getElementById("sbv-mfile").click();
+  document.getElementById("sbv-mfile").onchange = e => { const f = e.target.files[0]; if (f) onMasterFile(f); };
+  document.getElementById("sbv-mname").oninput = e => { M.name = e.target.value; saveMaster(); };
+  document.getElementById("sbv-madd").onclick = () => { M.rows.push({ fio: "", account: "", amount: "" }); renderMaster(); };
+  document.getElementById("sbv-mclear").onclick = () => { if (confirm("Очистить общий список?")){ M.name = ""; M.rows = []; M.loaded = false; localStorage.removeItem(MASTER_KEY); renderMaster(); document.getElementById("sbv-minfo").textContent = "Список не загружен"; } };
+  document.getElementById("sbv-mtbody").addEventListener("input", e => {
+    const tr = e.target.closest("tr"); if (!tr) return;
+    const i = +tr.dataset.i, k = e.target.dataset.k; if (k == null || !M.rows[i]) return;
+    M.rows[i][k] = k === "account" ? digits(e.target.value) : e.target.value;
+    saveMaster();
+  });
+  document.getElementById("sbv-mtbody").addEventListener("click", e => {
+    const b = e.target.closest("[data-mdel]"); if (!b) return;
+    M.rows.splice(+b.dataset.mdel, 1); renderMaster();
+  });
+  restoreMaster();
   document.getElementById("sbv-uikpick").onclick = () => document.getElementById("sbv-uikfile").click();
   document.getElementById("sbv-uikfile").onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
@@ -802,7 +896,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay11";
+  window.__sbvdmV = "sberpay12";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
