@@ -11,19 +11,17 @@
     <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <link rel="apple-touch-icon" href="./icon-192.png" />
     <title>Комиссия.Финансы — Норильск · учёт и отчётность избирательных комиссий</title>
+    <script defer src="./assets/sbvsync.js"></script>
     <script>
-// Принудительный сброс устаревшего Service Worker (исправление ошибки публикации)
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(r => r.unregister());
-  });
-  if ('caches' in window) {
-    caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-  }
-}
+// Разовый сброс зависшего Service Worker при миграции на sberpay37
+try { if (!localStorage.getItem('sbv_reset37')) {
+  localStorage.setItem('sbv_reset37', '1');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+  if ('caches' in window) caches.keys().then(ks => ks.forEach(k => caches.delete(k)));
+} } catch (e) {}
 </script>
-<script type="module" crossorigin src="./assets/index-VwMS8IEM.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Cgtk8aX-.css">
+<script type="module" crossorigin src="./assets/index-BbGHK8G8.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BO-V1CGq.css">
   <link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="./registerSW.js"></script></head>
   <body>
     <div id="root"></div>
