@@ -12,6 +12,7 @@ const FIELDS = [
   {key:"last",    label:"Фамилия"},
   {key:"first",   label:"Имя"},
   {key:"middle",  label:"Отчество"},
+  {key:"role",    label:"Должность (необязательно)"},
   {key:"amount",  label:"Сумма"},
   {key:"deduct",  label:"Удержания (необязательно)"},
 ];
@@ -21,6 +22,7 @@ const RULES = [
   ["first",   /(^|[^а-яa-z])имя([^а-яa-z]|$)/i],
   ["fio",     /фио|получател|сотрудник|работник|член|наименование/i],
   ["account", /сч[её]т|account/i],
+  ["role",    /председат|замест|секретарь|должност/i],
   ["deduct",  /удерж|ндфл/i],
   ["amount",  /сумма|выплат|начисл|итог|вознагражд|к\s*оплат/i],
 ];
@@ -56,6 +58,53 @@ function normAmount(v){
 function splitFio(fio){
   const p = String(fio ?? "").trim().split(/\s+/).filter(Boolean);
   return { last: p[0] || "", first: p[1] || "", middle: p.slice(2).join(" ") };
+}
+const RATES = { chair: 63, deputy: 57, secretary: 57, member: 45 };
+function mapRole(v){
+  const s = String(v || "").toLowerCase();
+  if (/председат/.test(s)) return "chair";
+  if (/замест/.test(s)) return "deputy";
+  if (/секретар/.test(s)) return "secretary";
+  return "member";
+}
+const normFio = s => String(s || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+function collectMembers(){
+  if (!S.matrix.length) return [];
+  const get = (row, key) => { const i = S.mapping[key]; return (i == null || i < 0) ? "" : row[i]; };
+  const out = [];
+  for (const row of S.matrix){
+    let fio = "";
+    if (S.mapping.fio != null && S.mapping.fio >= 0) fio = String(get(row, "fio")).trim();
+    else fio = [get(row, "last"), get(row, "first"), get(row, "middle")].map(x => String(x).trim()).filter(Boolean).join(" ");
+    if (fio) out.push({ fio, role: mapRole(get(row, "role")) });
+  }
+  return out;
+}
+async function updateCommissionMembers(commId){
+  const db = window.__db;
+  const mem = collectMembers();
+  if (!mem.length) throw new Error("не удалось собрать ФИО из файла — проверьте сопоставление колонок");
+  const incoming = new Map();
+  mem.forEach(m => incoming.set(normFio(m.fio), m.role));
+  return db.transaction("rw", db.members, async () => {
+    const existing = await db.members.where("commissionId").equals(commId).toArray();
+    let upgraded = 0, deleted = 0, updated = 0, added = 0;
+    for (const m of existing){
+      const key = normFio(m.fio);
+      if (m.source === "demo"){
+        if (incoming.has(key)){ await db.members.update(m.id, { source: "official", role: incoming.get(key) }); upgraded++; }
+        else { await db.members.delete(m.id); deleted++; }
+      } else if (incoming.has(key) && m.role !== incoming.get(key)){
+        await db.members.update(m.id, { role: incoming.get(key) }); updated++;
+      }
+    }
+    const have = new Set(existing.map(m => normFio(m.fio)));
+    const fresh = mem.filter(m => !have.has(normFio(m.fio)))
+      .map(m => ({ commissionId: commId, fio: m.fio, role: m.role, status: "нештатный", rate: RATES[m.role] || 45, source: "official" }));
+    if (fresh.length) await db.members.bulkAdd(fresh);
+    added = fresh.length;
+    return { total: mem.length, added, upgraded, deleted, updated };
+  });
 }
 function guessMapping(headers){
   const used = new Set(), mapping = {};
@@ -142,6 +191,12 @@ const TPL = `
   <h3><span class="num">2</span>Распознавание — проверьте сопоставление колонок</h3>
   <div class="maprow" id="sbv-map"></div>
   <div class="btnrow"><button type="button" id="sbv-apply">Применить → сформировать ведомость</button></div>
+  <div class="btnrow" style="margin-top:14px;border-top:1px solid rgba(128,140,170,.25);padding-top:12px">
+    <div style="width:100%;font-size:13px"><b>Обновить справочник членов УИК</b> <span style="opacity:.6">— заменить демонстрационные данные этим списком</span></div>
+    <select id="sbv-comm" style="flex:1;min-width:180px"><option value="">— выберите комиссию —</option></select>
+    <button type="button" class="ghost" id="sbv-updcomm">Обновить состав</button>
+  </div>
+  <div class="fileinfo" id="sbv-updres"></div>
 </div>
 
 <div class="card hide" id="sbv-tablecard">
@@ -294,6 +349,28 @@ export function mount(el){
     if (k) S.mapping[k] = +e.target.value;
   };
   document.getElementById("sbv-apply").onclick = applyMapping;
+  (async () => {
+    const sel = document.getElementById("sbv-comm");
+    try{
+      const db = window.__db;
+      if (!db || !db.commissions) throw new Error("нет доступа");
+      const list = (await db.commissions.toArray()).filter(c => c.level === "UIK").sort((a, b) => (a.uikNo || 0) - (b.uikNo || 0));
+      sel.innerHTML = '<option value="">— выберите комиссию —</option>' +
+        list.map(c => `<option value="${c.id}">${esc(c.code)}${c.district ? " · " + esc(c.district) : ""}</option>`).join("");
+    }catch(e){ sel.innerHTML = '<option value="">справочник недоступен</option>'; }
+  })();
+  document.getElementById("sbv-updcomm").onclick = async () => {
+    const res = document.getElementById("sbv-updres");
+    const id = +document.getElementById("sbv-comm").value;
+    if (!id){ res.textContent = "Выберите комиссию."; return; }
+    const btn = document.getElementById("sbv-updcomm");
+    btn.disabled = true; res.textContent = "Обновление…";
+    try{
+      const st = await updateCommissionMembers(id);
+      res.textContent = `Готово: ${st.total} человек из файла. Добавлено новых: ${st.added}, демо переведено в актуальные: ${st.upgraded}, демо удалено: ${st.deleted}, роли уточнены: ${st.updated}.`;
+    }catch(e){ res.textContent = "Ошибка обновления: " + e.message; }
+    finally{ btn.disabled = false; }
+  };
   document.getElementById("sbv-add").onclick = () => {
     S.rows.push({ account: "", last: "", first: "", middle: "", amount: "", deduct: "0.00" });
     renderTable();
