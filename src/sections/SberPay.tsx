@@ -8,7 +8,7 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay18';
+const VER = 'sberpay20';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
@@ -55,6 +55,71 @@ function mapRole(v: unknown): Role {
   if (/секретар/.test(s)) return 'secretary';
   return 'member';
 }
+// ── Умное распознавание: контент-анализ + заголовки ──────────────────
+function colEvidence(rows: string[][], i: number, tests: number) {
+  let acc = 0, amt = 0, fio = 0, uik = 0;
+  for (let r = 0; r < tests; r++) {
+    const v = String(rows[r] ? rows[r][i] ?? '' : '').trim();
+    if (!v) continue;
+    if (v.replace(/\D/g, '').length === 20) acc++;
+    if (/^\d{1,9}([.,]\d{1,2})?$/.test(v.replace(/[\s\u00A0]/g, '').replace(',', '.'))) amt++;
+    if (/^[А-ЯЁ][а-яё]+(\s+[А-ЯЁ][а-яё]+)+/.test(v)) fio++;
+    if (/^(уик\s*)?№?\s*\d{1,4}$/i.test(v)) uik++;
+  }
+  const n = Math.max(tests, 1);
+  return { acc: acc / n, amt: amt / n, fio: fio / n, uik: uik / n };
+}
+function smartMapping(headers: string[], rows: string[][]): { mapping: Record<string, number>; confidence: number } {
+  const tests = Math.min(rows ? rows.length : 0, 30);
+  const ev = headers.map((_, i) => colEvidence(rows || [], i, tests));
+  const used = new Set<number>();
+  const mapping: Record<string, number> = {}; const conf: Record<string, number> = {};
+  function pick(key: string, metric: 'acc' | 'amt' | 'fio', re: RegExp, minContent: number) {
+    let best = -1, bs = 0;
+    headers.forEach((h, i) => {
+      if (used.has(i)) return;
+      const s = ev[i][metric] * 0.8 + (re.test(String(h)) ? 0.6 : 0);
+      if (s > bs) { bs = s; best = i; }
+    });
+    if (best >= 0 && (ev[best][metric] >= minContent || re.test(String(headers[best])))) {
+      mapping[key] = best; used.add(best); conf[key] = Math.round(ev[best][metric] * 100);
+    }
+  }
+  pick('account', 'acc', /сч[её]т|account/i, 0.5);
+  pick('amount', 'amt', /сумма|выплат|начисл|итог|вознагражд|к\s*оплат/i, 0.5);
+  pick('fio', 'fio', /фио|получател|сотрудник|работник|член|наименование/i, 0.4);
+  if (mapping.fio == null) {
+    for (const [key, re] of [['last', /фамили/i], ['first', /(^|[^а-яa-z])имя([^а-яa-z]|$)/i], ['middle', /отчеств/i]] as const) {
+      const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(String(h)));
+      if (i >= 0) { mapping[key] = i; used.add(i); }
+    }
+  }
+  for (const [key, re] of [['role', /председат|замест|секретарь|должност/i], ['deduct', /удерж|ндфл/i]] as const) {
+    const i = headers.findIndex((h, idx) => !used.has(idx) && re.test(String(h)));
+    if (i >= 0) { mapping[key] = i; used.add(i); }
+  }
+  const vals = Object.keys(conf).map((k) => conf[k]);
+  return { mapping, confidence: vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0 };
+}
+function normFioCase(fio: string): string {
+  return String(fio || '').split(/\s+/).map((w) => (!w ? w : (w === w.toLowerCase() || w === w.toUpperCase()) ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(' ');
+}
+function filterSmartRows(matrix: string[][]): { rows: string[][]; totalRow: number | null } {
+  const out: string[][] = []; let totalRow: number | null = null;
+  for (const row of matrix) {
+    const nonEmpty = row.filter((c) => String(c ?? '').trim() !== '');
+    if (!nonEmpty.length) continue;
+    const first = String(row[0] ?? '').trim();
+    if (/^(итог|всего|сумма|общая|результат)/i.test(first) && nonEmpty.length <= 3) {
+      for (const c of nonEmpty) { const n = parseFloat(String(c).replace(/[\s\u00A0]/g, '').replace(',', '.')); if (isFinite(n) && n > 0) totalRow = n; }
+      continue;
+    }
+    if (nonEmpty.length === 1 && row.length > 1) continue;
+    out.push(row);
+  }
+  return { rows: out, totalRow };
+}
+
 function guessMapping(headers: string[]) {
   const used = new Set<number>(); const mapping: Record<string, number> = {};
   for (const [key, re] of RULES) {
@@ -367,7 +432,7 @@ export default function SberPay() {
         amount: normAmount(get(row, 'amount')),
         deduct: normAmount(get(row, 'deduct')) || '0.00',
       };
-      if (mp.fio != null && mp.fio >= 0) Object.assign(r, splitFio(String(get(row, 'fio')).trim()));
+      if (mp.fio != null && mp.fio >= 0) Object.assign(r, splitFio(normFioCase(String(get(row, 'fio')).trim())));
       else {
         r.last = String(get(row, 'last')).trim();
         r.first = String(get(row, 'first')).trim();
@@ -389,7 +454,8 @@ export default function SberPay() {
     try {
       const { rows: mtx, headers: hdrs, ocr } = await extractRows(file);
       if (!mtx.length) throw new Error('не найдены строки с данными');
-      const mp = guessMapping(hdrs);
+      const sm = smartMapping(hdrs, mtx);
+      const mp = sm.mapping;
       setHeaders(hdrs); setMatrix(mtx); setMapping(mp); setFileName(file.name); setCheck(null);
       setInfo(`${file.name} · ${mtx.length} строк${ocr ? ' · OCR (сверьте вручную)' : ''}`);
       applyMapping(hdrs, mtx, mp);
