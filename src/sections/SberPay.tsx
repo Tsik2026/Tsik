@@ -8,11 +8,12 @@ import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
 import type { Member, Role } from '../types';
 
-const VER = 'sberpay25';
+const VER = 'sberpay28';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
 const REG_KEY = 'sbv_registry_v1';
 const DRAFT_KEY = 'sbv_draft_v1';
 const MASTER_KEY = 'sbv_master_v1';
+const TPL_KEY = 'sbv_tpl_v1';
 
 interface VedRow { account: string; last: string; first: string; middle: string; amount: string; deduct: string; }
 interface RegEntry { id: number; name: string; date: string; kind: string; rows: VedRow[]; count: number; sum: string; bad: number; }
@@ -350,6 +351,7 @@ export default function SberPay() {
   const [updateReady, setUpdateReady] = useState(false);
   const [expMenu, setExpMenu] = useState(0);
   const [expRegId, setExpRegId] = useState(0);
+  const [tpl, setTpl] = useState(() => { try { return localStorage.getItem(TPL_KEY) || 'sber'; } catch { return 'sber'; } });
   const [master, setMaster] = useState<{ name: string; rows: { fio: string; account: string; amount: string }[] }>(() => {
     try { return JSON.parse(localStorage.getItem(MASTER_KEY) || '{\"name\":\"\",\"rows\":[]}'); } catch { return { name: '', rows: [] }; }
   });
@@ -487,8 +489,19 @@ export default function SberPay() {
       }
       return r;
     }).filter((r) => r.account || r.last || parseFloat(r.amount) > 0);
-    setRows(out);
-    setAppliedSum(out.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0));
+    let out2 = out;
+    if (tpl !== 'sber') {
+      const R: Record<string, number> = { chair: 63, deputy: 57, secretary: 57, member: 45 };
+      let filled = 0;
+      out2 = out.map((r) => {
+        const role = (r as unknown as { __role?: string }).__role;
+        if ((!r.amount || parseFloat(r.amount) <= 0) && role && R[role]) { filled++; return { ...r, amount: R[role].toFixed(2) }; }
+        return r;
+      });
+      if (filled) setInfo((i) => i + ` · автозаполнение по шаблону ${tpl.toUpperCase()}: сумм по ставкам ЦИК — ${filled}`);
+    }
+    setRows(out2);
+    setAppliedSum(out2.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0));
     const reg = loadReg();
     const t = (() => { let s = 0, b = 0; for (const r of out) { const n = parseFloat(r.amount); if (isFinite(n) && n > 0) s += n; if (rowProblems(r).length) b++; } return { s, b }; })();
     reg.unshift({ id: Date.now(), name: fileName || 'без имени', date: new Date().toLocaleString('ru-RU'), kind: 'table', rows: out.map((r) => ({ ...r })), count: out.length, sum: t.s.toFixed(2), bad: t.b });
@@ -671,8 +684,33 @@ export default function SberPay() {
     download(`ved_SBER_${nm}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
 
-  async function downloadControlForm() {
+  async function downloadControlForm(kind?: string) {
     const XLSX = await loadXlsx();
+    const k = kind || tpl;
+    if (k === 'uik' || k === 'tik') {
+      const isUik = k === 'uik';
+      const aoa: unknown[][] = [
+        ["КОНТРОЛЬНАЯ ФОРМА"],
+        [`к ведомости на выплату вознаграждения членам ${isUik ? "участковой" : "территориальной"} избирательной комиссии`],
+        [],
+        [`${isUik ? "Участковая избирательная комиссия № ______" : "Территориальная избирательная комиссия"}`, "", "", "Наименование выборов/период:", ""],
+        ["", "", "", "Дата составления:", ""],
+        [],
+        ["№ п/п", "Фамилия, имя, отчество", "Должность", "Ставка вознаграждения, руб.", "Кол-во дней (смен)", "Сумма, руб.", "Подпись"],
+      ];
+      for (let i = 1; i <= 10; i++) aoa.push([i, "", "", "", "", "", ""]);
+      aoa.push([], ["", "", "", "", "ИТОГО:", "", ""], [], ["Сумма прописью:", "", "", "", "", "", ""], [],
+        ["Председатель комиссии: _________ / ________________ /", "", "", "", "Секретарь: _________ / ________________ /", "", ""], [], ["М.П."], [],
+        isUik ? ["Отметка ТИК о согласовании:", "", "", "", "", "", ""] : ["Согласовано с избирательной комиссией субъекта РФ:", "", "", "", "", "", ""], [],
+        ["Примечание: ставки вознаграждения — по постановлению ЦИК России (председатель — 63, заместитель и секретарь — 57, член — 45 за день работы)."],
+        ["Форма — рабочий шаблон по структуре контрольных форм, применяемых при выплате вознаграждений членам избирательных комиссий; реквизиты события заполняются вручную."]);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 6 }, { wch: 30 }, { wch: 16 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 16 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Контрольная форма');
+      download(`kontrolnaya_forma_${k.toUpperCase()}_${stamp()}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      return;
+    }
     const aoa: unknown[][] = [
       ["ПАО СБЕРБАНК"],
       ["КОНТРОЛЬНАЯ ФОРМА ВЕДОМОСТИ"],
@@ -809,7 +847,12 @@ export default function SberPay() {
         <CardHead>
           <span className="flex items-center justify-between w-full">
             Реестр загруженных файлов
-            <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => void downloadControlForm()}>Контрольная форма</button>
+            <select value={tpl} onChange={(e) => { setTpl(e.target.value); try { localStorage.setItem(TPL_KEY, e.target.value); } catch { /* */ } }} className="rounded-lg border border-slate-400/40 bg-transparent px-2 py-1 text-[12px]">
+              <option value="sber">КФ — Сбербанк</option>
+              <option value="uik">КФ — УИК</option>
+              <option value="tik">КФ — ТИК</option>
+            </select>
+            <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={() => void downloadControlForm()}>Скачать форму</button>
             <button type="button" className="rounded-lg bg-slate-500/20 px-2.5 py-1 text-[12px]" onClick={runCheck}>Сверка ФИО и счетов</button>
           </span>
         </CardHead>
