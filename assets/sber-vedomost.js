@@ -194,7 +194,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay14</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay15</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -242,6 +242,7 @@ const TPL = `
   <div class="hint" style="margin:0 0 10px">Отдельная загрузка актуального состава: демонстрационные данные комиссий заменятся этим списком. Если в файле есть колонка с номером УИК — обновление пройдёт по всем комиссиям автоматически, иначе выберите комиссию вручную.</div>
   <div class="btnrow">
     <label class="filebtn"><input type="file" id="sbv-uikfile" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" class="ghost" id="sbv-uikpick">Выбрать файл состава</button></label>
+    <select id="sbv-uikreg" style="flex:1;min-width:160px"><option value="">— или выбрать из реестра вкладки —</option></select>
     <select id="sbv-uikcomm" style="flex:1;min-width:170px"><option value="">— по колонке УИК в файле —</option></select>
     <button type="button" id="sbv-uikgo">Обновить списки УИК</button>
   </div>
@@ -603,6 +604,27 @@ async function onMasterFile(file){
   }catch(e){ info.textContent = "Ошибка чтения: " + e.message; }
 }
 
+function fillUikRegSelect(){
+  const sel = document.getElementById("sbv-uikreg");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— или выбрать из реестра вкладки —</option>' +
+    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел.</option>`).join("");
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+function loadUikFromRegistry(id){
+  const info = document.getElementById("sbv-uikinfo");
+  const e = loadReg().find(x => x.id === id);
+  if (!e){ U.matrix = []; info.textContent = "Файл не выбран"; return; }
+  const rows = (e.rows || []).map(r => [[r.last, r.first, r.middle].join(" ").trim(), r.account || "", r.amount || ""]);
+  if (!rows.length){ U.matrix = []; info.textContent = "В записи реестра нет строк."; return; }
+  U.matrix = rows; U.headers = ["ФИО", "Счет", "Сумма"];
+  U.mapping = { fio: 0, account: 1, amount: 2 };
+  U.fileName = e.name + " (реестр)";
+  U.uikCol = detectUikColumn(U.headers, rows);
+  info.textContent = `${e.name} · из реестра · ${rows.length} строк · колонка УИК: ${U.uikCol >= 0 ? '"' + U.headers[U.uikCol] + '"' : "не найдена — выберите комиссию вручную"}`;
+}
+
 /* ---------- отдельное обновление списков УИК ---------- */
 const U = { headers: [], matrix: [], mapping: {}, uikCol: -1, fileName: "" };
 async function extractRows(file){
@@ -707,6 +729,7 @@ function renderReg(){
   if (!card || !list) return;
   if (!reg.length){ list.innerHTML = '<div class="fileinfo">Пока пусто — загрузите файл, он попадёт в реестр автоматически</div>'; card.classList.remove("hide"); return; }
   card.classList.remove("hide");
+  fillUikRegSelect();
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
     <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
@@ -889,7 +912,9 @@ export function mount(el){
     }catch(err){ U.matrix = []; info.textContent = "Ошибка чтения: " + err.message; }
   };
   document.getElementById("sbv-uikgo").onclick = runUikUpdate;
+  document.getElementById("sbv-uikreg").onchange = e => { if (e.target.value) loadUikFromRegistry(+e.target.value); else { U.matrix = []; document.getElementById("sbv-uikinfo").textContent = "Файл не выбран"; } };
   renderReg();
+  fillUikRegSelect();
   if (!S.rows.length) restoreDraft();
   document.getElementById("sbv-file").onchange = e => { if (e.target.files[0]) onFile(e.target.files[0]); };
   document.getElementById("sbv-map").onchange = e => {
@@ -977,7 +1002,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay14";
+  window.__sbvdmV = "sberpay15";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
