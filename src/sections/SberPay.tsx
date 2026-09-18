@@ -6,7 +6,7 @@ import { db } from '../lib/db';
 import { loadXlsx } from '../lib/excel';
 import { RATES } from '../lib/rules';
 import { Card, CardHead, Num } from '../components/app/kit';
-import type { Role } from '../types';
+import type { Member, Role } from '../types';
 
 const VER = 'sberpay12';
 const HEADER = ['Счет (20 знаков)', 'Фамилия', 'Имя', 'Отчество', 'Сумма (разделитель - точка)', 'Сумма произведенных удержаний (разделитель - точка)'];
@@ -165,8 +165,8 @@ async function extractRows(file: File): Promise<{ rows: string[][]; headers: str
   if (!matrix.length) throw new Error('файл пустой');
   const first = matrix[0].map((c) => String(c).trim());
   const looksHeader = first.some((c) => /[A-Za-zА-Яа-яЁё]/.test(c));
-  if (looksHeader) return { rows: matrix.slice(1), headers: first };
-  return { rows: matrix, headers: first.map((_, i) => `Колонка ${i + 1}`) };
+  if (looksHeader) return { rows: matrix.slice(1) as string[][], headers: first };
+  return { rows: matrix as string[][], headers: first.map((_, i) => `Колонка ${i + 1}`) };
 }
 
 // ── Обновление состава комиссии в базе приложения ────────────────────
@@ -187,7 +187,7 @@ async function updateCommissionMembers(commId: number, mem: { fio: string; role:
     const have = new Set(existing.map((m) => normFio(m.fio)));
     const fresh = mem.filter((m) => !have.has(normFio(m.fio)))
       .map((m) => ({ commissionId: commId, fio: m.fio, role: m.role, status: 'нештатный', rate: RATES[m.role], source: 'official' }));
-    if (fresh.length) await db.members.bulkAdd(fresh);
+    if (fresh.length) await db.members.bulkAdd(fresh as Member[]);
     return { total: mem.length, added: fresh.length, upgraded, deleted, updated };
   });
 }
@@ -322,7 +322,7 @@ export default function SberPay() {
     return seen;
   }, [rows]);
 
-  function applyMapping(hdrs: string[], mtx: string[][], mp: Record<string, number>) {
+  function applyMapping(_hdrs: string[], mtx: string[][], mp: Record<string, number>) {
     const get = (row: string[], key: string) => { const i = mp[key]; return (i == null || i < 0) ? '' : row[i]; };
     const out: VedRow[] = mtx.map((row) => {
       const r: VedRow = {
@@ -516,7 +516,7 @@ export default function SberPay() {
   }
   async function exportCsv(encoding: '1251' | 'utf8') {
     if (!guard()) return;
-    if (encoding === '1251') download(`ved_SBER_${stamp()}.csv`, new Blob([enc1251(csvText())], { type: 'application/csv;charset=windows-1251' }));
+    if (encoding === '1251') download(`ved_SBER_${stamp()}.csv`, new Blob([enc1251(csvText()).buffer as ArrayBuffer], { type: 'application/csv;charset=windows-1251' }));
     else download(`ved_SBER_${stamp()}.csv`, new Blob(['﻿' + csvText()], { type: 'application/csv;charset=utf-8' }));
   }
   async function exportXlsx() {
