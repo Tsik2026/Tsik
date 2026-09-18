@@ -191,10 +191,12 @@ const CSS = `
 .sbv .chk li.e::before{content:"✖";color:#d33}
 .sbv .chk li.w::before{content:"⚠";color:#c90}
 .sbv .regmenu{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;padding-top:6px;border-top:1px dashed rgba(128,140,170,.25)}
+.sbv .dropzone{border:2px dashed rgba(128,140,170,.45);border-radius:12px;padding:18px;text-align:center;font-size:13px;opacity:.75;margin-top:10px;transition:all .15s}
+.sbv .dropzone.over{border-color:#2f6fed;background:rgba(47,111,237,.1);opacity:1}
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay17</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay18</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -253,6 +255,7 @@ const TPL = `
   <h3><span class="num">1</span>Загрузите предварительный список</h3>
   <label class="filebtn"><input type="file" id="sbv-file" accept=".xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg,.webp" style="display:none"> <button type="button" id="sbv-pick">Выбрать файл (.xlsx / .xls / .csv)</button></label>
   <div class="fileinfo" id="sbv-fileinfo">Excel (.xlsx/.xls), CSV, TXT или фото/скан (.png/.jpg) — с распознаванием текста, включая аккуратный рукописный</div>
+  <div class="dropzone" id="sbv-drop">⬇ Перетащите файл сюда — распознается автоматически</div>
 </div>
 
 <div class="card hide" id="sbv-mapcard">
@@ -279,6 +282,8 @@ const TPL = `
   </table></div>
   <div class="btnrow">
     <button type="button" class="ghost" id="sbv-add">+ Строка</button>
+    <button type="button" class="ghost hide" id="sbv-mmerge">Подставить из общего списка</button>
+    <button type="button" class="ghost" id="sbv-copy">Копировать итоги</button>
     <button type="button" class="warnb hide" id="sbv-clear">Очистить всё</button>
   </div>
   <div class="totals" id="sbv-totals"></div>
@@ -563,6 +568,29 @@ function restoreDraft(){
   }catch(e){}
 }
 
+function mergeFromMaster(){
+  if (!M.rows.length){ alert("Общий список пуст — сначала загрузите его."); return; }
+  const byFio = new Map(M.rows.map(r => [normFio(r.fio), r]));
+  let filled = 0;
+  S.rows = S.rows.map(r => {
+    const m = byFio.get(normFio([r.last, r.first, r.middle].join(" ")));
+    if (!m) return r;
+    const nr = { ...r };
+    if (!nr.account && m.account){ nr.account = m.account; filled++; }
+    if ((!nr.amount || parseFloat(nr.amount) <= 0) && m.amount){ nr.amount = m.amount; filled++; }
+    return nr;
+  });
+  renderTable();
+  document.getElementById("sbv-fileinfo").textContent = "Подставлено из общего списка: " + filled + " значений (по совпадению ФИО).";
+}
+function copySummary(){
+  const t = totals();
+  const txt = `Ведомость Сбербанк: получателей ${t.cnt} из ${S.rows.length}, итого ${t.sum.toFixed(2)} ₽` + (t.bad ? `, ошибок: ${t.bad}` : " — готово к выгрузке");
+  const done = () => { document.getElementById("sbv-fileinfo").textContent = "Итоги скопированы в буфер обмена."; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { prompt("Скопируйте вручную:", txt); });
+  else prompt("Скопируйте вручную:", txt);
+}
+
 /* ---------- общий список (мастер-список получателей) ---------- */
 const MASTER_KEY = "sbv_master_v1";
 const M = { name: "", rows: [], loaded: false };
@@ -575,6 +603,10 @@ function saveMaster(){
     }catch(e){}
   }, 800);
 }
+function refreshMergeBtn(){
+  const b = document.getElementById("sbv-mmerge");
+  if (b) b.classList.toggle("hide", !M.rows.length);
+}
 function renderMaster(){
   const wrap = document.getElementById("sbv-mwrap");
   const tb = document.getElementById("sbv-mtbody");
@@ -586,6 +618,7 @@ function renderMaster(){
   if (!M.rows.length){ wrap.classList.add("hide"); add.classList.add("hide"); if (!M.loaded) info.textContent = "Список не загружен"; return; }
   M.loaded = true;
   wrap.classList.remove("hide"); add.classList.remove("hide");
+  refreshMergeBtn();
   tb.innerHTML = M.rows.map((r, i) => `<tr data-i="${i}">
     <td>${i + 1}</td>
     <td><input type="text" data-k="fio" value="${esc(r.fio)}"></td>
@@ -928,10 +961,17 @@ export function mount(el){
     }
     if (d){ saveReg(loadReg().filter(x2 => x2.id !== +d.dataset.rdel)); renderReg(); }
   });
+  refreshMergeBtn();
   document.getElementById("sbv-regcheck").onclick = runCheck;
   document.getElementById("sbv-tpick").onclick = () => document.getElementById("sbv-tfile").click();
   document.getElementById("sbv-tfile").onchange = e => { const f = e.target.files[0]; if (f) onFile(f); };
   document.getElementById("sbv-treg").onchange = e => { if (e.target.value) restoreReg(+e.target.value); };
+  const dz = document.getElementById("sbv-drop");
+  ["dragover", "dragenter"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f) onFile(f); });
+  document.getElementById("sbv-mmerge").onclick = mergeFromMaster;
+  document.getElementById("sbv-copy").onclick = copySummary;
   document.getElementById("sbv-mpick").onclick = () => document.getElementById("sbv-mfile").click();
   document.getElementById("sbv-mfile").onchange = e => { const f = e.target.files[0]; if (f) onMasterFile(f); };
   document.getElementById("sbv-mname").oninput = e => { M.name = e.target.value; saveMaster(); };
@@ -1056,7 +1096,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay17";
+  window.__sbvdmV = "sberpay18";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
