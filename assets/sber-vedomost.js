@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay38</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay39</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -473,10 +473,10 @@ const TPL = `
     <button type="button" id="sbv-csv1251" style="font-size:15px;padding:12px 22px">⬇ Выгрузить в Сбербанк</button>
   </div>
   <div class="hint">Файл CSV (Windows-1251) в формате «Ведомость на счета» — готов к импорту: Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости.</div>
-  <div class="hint" style="color:#d97706;font-weight:600">⚠️ Не открывайте CSV в Excel для проверки — Excel превращает счёт в число и обрезает до 15 цифр (4,08E+19, нули в конце). Сам файл для банка корректен. Для проверки используйте кнопку «Проверить CSV» или XLSX.</div>
+  <div class="hint" style="color:#d97706;font-weight:600">⚠️ Не открывайте CSV в Excel для проверки — Excel превращает счёт в число и обрезает до 15 цифр. Файл «CSV UTF-8» — без BOM (BOM = лишний символ, банк отклонит). В банк: «Выгрузить в Сбербанк» (1251) или «CSV UTF-8». Для проверки: «Проверить CSV» или XLSX.</div>
   <div class="btnrow" style="margin-top:0"><button type="button" class="ghost" id="sbv-csvcheck">Проверить CSV (показать содержимое файла)</button></div>
   <div class="btnrow" style="margin-top:4px">
-    <button type="button" class="ghost" id="sbv-csvutf">CSV UTF-8</button>
+    <button type="button" class="ghost" id="sbv-csvutf">CSV UTF-8 (без BOM)</button>
     <button type="button" class="ghost" id="sbv-xlsx">XLSX</button>
     <button type="button" class="ghost" id="sbv-sample">Скачать образец</button>
   </div>
@@ -710,7 +710,8 @@ function buildLines(src){
 }
 function csvText(src){
   const q = v => { v = String(v ?? ""); return /[";\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  return [HEADER.map(q).join(";")].concat(buildLines(src).map(c => c.map(q).join(";"))).join("\r\n");
+  const clean = v => String(v ?? "").replace(/[^\d]/g, "");
+  return [HEADER.map(q).join(";")].concat(buildLines(src).map(c => [clean(c[0]), c[1], c[2], c[3], c[4], c[5]].map(q).join(";"))).join("\r\n");
 }
 function exportName(){
   const el = document.getElementById("sbv-expreg");
@@ -1125,7 +1126,7 @@ function exportRegEntry(id, fmt){
   if (!rows.length){ alert("В записи нет строк."); return; }
   const nm = (e.name || "vedomost").replace(/\.[^.]+$/, "").replace(/[^\w\u0400-\u04FF\-]+/g, "_").slice(0, 40) || "vedomost";
   if (fmt === "csv1251") download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(csvTextFrom(rows))], { type: "application/csv;charset=windows-1251" }));
-  else if (fmt === "csvutf") download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(["\uFEFF" + csvTextFrom(rows)], { type: "application/csv;charset=utf-8" }));
+  else if (fmt === "csvutf") download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([csvTextFrom(rows)], { type: "application/csv;charset=utf-8" }));
   else if (fmt === "xlsx"){
     const aoa = [HEADER, ...rows.map(r => [r.account, r.last, r.first, r.middle, parseFloat(r.amount) || 0, parseFloat(r.deduct) || 0])];
     const ws = sheetFromRows(aoa);
@@ -1302,7 +1303,8 @@ async function sendRegEntry(id){
 }
 function csvTextFrom(rows){
   const q = v => { v = String(v ?? ""); return /[";\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  return [HEADER.map(q).join(";")].concat(rows.map(r => [r.account, r.last, r.first, r.middle, r.amount || "0.00", r.deduct || "0.00"].map(q).join(";"))).join("\r\n");
+  const clean = v => String(v ?? "").replace(/[^\d]/g, "");
+  return [HEADER.map(q).join(";")].concat(rows.map(r => [clean(r.account), r.last, r.first, r.middle, r.amount || "0.00", r.deduct || "0.00"].map(q).join(";"))).join("\r\n");
 }
 
 function restoreReg(id){
@@ -1391,8 +1393,10 @@ function previewCsv(){
   if (lines.length > 41) body += `<tr><td>…</td><td colspan="6">и ещё ${lines.length - 41} строк</td></tr>`;
   body += "</table>";
   const cnt = rows.length, sum = rows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0);
+  const badAcc = rows.filter(r => !/^\d{20}$/.test(String(r.account || "").replace(/[^\d]/g, ""))).length;
+  const verdict = badAcc ? `<span style="color:#d33;font-weight:700">⚠ Счёт не 20 цифр у ${badAcc} строк — банк отклонит</span>` : `<span style="color:#2e9e5b;font-weight:700">✓ Все счета ровно 20 цифр — формат корректен</span>`;
   openViewer("Проверка CSV перед отправкой в банк",
-    `<div class="fileinfo" style="margin-bottom:6px">${cnt} получателей · итого ${sum.toFixed(2)} ₽ · кодировка Windows-1251 · разделитель «;»</div>` + body +
+    `<div class="fileinfo" style="margin-bottom:6px">${cnt} получателей · итого ${sum.toFixed(2)} ₽ · кодировка Windows-1251 · разделитель «;» · ${verdict}</div>` + body +
     `<div class="mact"><button type="button" data-mclose2>Закрыть</button></div>`);
 }
 
@@ -1627,7 +1631,7 @@ export function mount(el){
   document.getElementById("sbv-csvutf").onclick = () => {
     const rows = exportRowsFixed(); if (!guardRows(rows)) return;
     const nm = exportName(rows);
-    download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob(["\uFEFF" + csvText(rows)], { type: "application/csv;charset=utf-8" }));
+    download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([csvText(rows)], { type: "application/csv;charset=utf-8" }));
   };
   document.getElementById("sbv-xlsx").onclick = () => {
     const rows = exportRowsFixed(); if (!guardRows(rows)) return;
@@ -1644,7 +1648,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay38";
+  window.__sbvdmV = "sberpay39";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
