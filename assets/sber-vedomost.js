@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay39</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay40</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -473,10 +473,11 @@ const TPL = `
     <button type="button" id="sbv-csv1251" style="font-size:15px;padding:12px 22px">⬇ Выгрузить в Сбербанк</button>
   </div>
   <div class="hint">Файл CSV (Windows-1251) в формате «Ведомость на счета» — готов к импорту: Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости.</div>
-  <div class="hint" style="color:#d97706;font-weight:600">⚠️ Не открывайте CSV в Excel для проверки — Excel превращает счёт в число и обрезает до 15 цифр. Файл «CSV UTF-8» — без BOM (BOM = лишний символ, банк отклонит). В банк: «Выгрузить в Сбербанк» (1251) или «CSV UTF-8». Для проверки: «Проверить CSV» или XLSX.</div>
+  <div class="hint" style="color:#d97706;font-weight:600">⚠️ В банк: «Выгрузить в Сбербанк» (1251, со шапкой) — для ведомостей; «CSV без шапки» — для раздела «Загрузка списка получателей» (банк не пропускает шапку и пишет ошибку по строке 1). «CSV UTF-8» — без BOM. Не открывайте CSV в Excel — он обрезает счёт до 15 цифр. Для проверки: «Проверить CSV» или XLSX.</div>
   <div class="btnrow" style="margin-top:0"><button type="button" class="ghost" id="sbv-csvcheck">Проверить CSV (показать содержимое файла)</button></div>
   <div class="btnrow" style="margin-top:4px">
     <button type="button" class="ghost" id="sbv-csvutf">CSV UTF-8 (без BOM)</button>
+    <button type="button" class="ghost" id="sbv-csvnh">CSV без шапки (для «Списка получателей»)</button>
     <button type="button" class="ghost" id="sbv-xlsx">XLSX</button>
     <button type="button" class="ghost" id="sbv-sample">Скачать образец</button>
   </div>
@@ -1633,6 +1634,12 @@ export function mount(el){
     const nm = exportName(rows);
     download(`ved_SBER_${nm}_${stamp()}.csv`, new Blob([csvText(rows)], { type: "application/csv;charset=utf-8" }));
   };
+  document.getElementById("sbv-csvnh").onclick = () => {
+    const rows = exportRowsFixed(); if (!guardRows(rows)) return;
+    const nm = exportName(rows);
+    const lines = csvText(rows).split("\r\n").slice(1); // без шапки
+    download(`spisok_SBER_${nm}_${stamp()}.csv`, new Blob([enc1251(lines.join("\r\n"))], { type: "application/csv;charset=windows-1251" }));
+  };
   document.getElementById("sbv-xlsx").onclick = () => {
     const rows = exportRowsFixed(); if (!guardRows(rows)) return;
     const nm = exportName(rows);
@@ -1648,7 +1655,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay39";
+  window.__sbvdmV = "sberpay40";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
