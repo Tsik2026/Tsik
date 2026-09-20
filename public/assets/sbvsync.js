@@ -173,6 +173,17 @@ setInterval(bkRun, 5 * 60 * 1000);
     '<ellipse cx="12" cy="16.2" rx="1.5" ry="1.1" fill="#222"/></svg></button>' +
     '<button id="panda-close" title="Скрыть строку">\u00D7</button>';
   document.body.appendChild(bar);
+  function placeBar(){
+    var h = 0;
+    var els = document.querySelectorAll("nav, footer, [role=navigation]");
+    for (var i = 0; i < els.length; i++) {
+      var r = els[i].getBoundingClientRect();
+      if (r.top > window.innerHeight * 0.6 && r.height > 20 && r.height < 160) { h = r.height; break; }
+    }
+    bar.style.bottom = ((h || 64) + 2) + "px";
+  }
+  placeBar();
+  window.addEventListener("resize", placeBar);
 
   var modal = document.createElement("div");
   modal.id = "panda-modal";
