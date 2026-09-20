@@ -129,7 +129,23 @@ setInterval(bkRun, 5 * 60 * 1000);
 /* ---------- ПАНДА: приглашение к модулю «Первичка» (бегущая строка + план на одобрение) ---------- */
 (function(){
   var HIDE_KEY = "panda_bar_hide_v1", PLAN_KEY = "panda_plan_v1";
-  try { if (localStorage.getItem(HIDE_KEY)) return; } catch (e) {}
+  var PVER = "sberpay44";
+  var hiddenVer = null;
+  try { hiddenVer = localStorage.getItem(HIDE_KEY); } catch (e) {}
+  if (hiddenVer === PVER) {
+    // Строка скрыта пользователем — показываем мини-кнопку восстановления
+    var rb = document.createElement("button");
+    rb.title = "\u041F\u043E\u043A\u0430\u0437\u0430\u0442\u044C \u0441\u0442\u0440\u043E\u043A\u0443 \u041F\u0430\u043D\u0434\u044B";
+    rb.setAttribute("style", "position:fixed;right:10px;bottom:120px;z-index:5001;width:38px;height:38px;border:0;border-radius:50%;background:#0f1f3d;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(0,0,0,.35);padding:0");
+    rb.innerHTML = '<svg viewBox="0 0 24 24" width="26" height="26"><circle cx="12" cy="13" r="8.2" fill="#fff"/><circle cx="5.4" cy="6.6" r="3.1" fill="#222"/><circle cx="18.6" cy="6.6" r="3.1" fill="#222"/><ellipse cx="8.6" cy="12.4" rx="2.5" ry="3" fill="#222" transform="rotate(-18 8.6 12.4)"/><ellipse cx="15.4" cy="12.4" rx="2.5" ry="3" fill="#222" transform="rotate(18 15.4 12.4)"/><circle cx="9" cy="12.6" r="0.9" fill="#fff"/><circle cx="15" cy="12.6" r="0.9" fill="#fff"/><ellipse cx="12" cy="16.2" rx="1.5" ry="1.1" fill="#222"/></svg>';
+    rb.addEventListener("click", function(){
+      try { localStorage.removeItem(HIDE_KEY); } catch (e) {}
+      location.reload();
+    });
+    document.addEventListener("DOMContentLoaded", function(){ document.body.appendChild(rb); });
+    if (document.body) document.body.appendChild(rb);
+    return;
+  }
 
   var MSG_INVITE = "\uD83D\uDC3C Здравствуйте! Я Панда — Ваш помощник. Помогу подготовить первичку из ваших файлов: распознаю документы, рассортирую по разделам, соберу реестр для приёмки. Согласны? Нажмите на меня \uD83D\uDC49";
   var MSG_OK = "\u2705 План модуля \u00ABПервичка\u00BB утверждён! Начинаем с Фазы 1 — подключение папки и индекс документов.";
@@ -221,7 +237,8 @@ setInterval(bkRun, 5 * 60 * 1000);
     }
   });
   document.getElementById("panda-close").addEventListener("click", function(){
-    try { localStorage.setItem(HIDE_KEY, "1"); } catch (e) {}
+    try { localStorage.setItem(HIDE_KEY, PVER); } catch (e) {}
     bar.remove();
+    location.reload();
   });
 })();
