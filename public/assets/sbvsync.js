@@ -125,3 +125,91 @@ function bkRun(){
 }
 setTimeout(bkRun, 90 * 1000);
 setInterval(bkRun, 5 * 60 * 1000);
+
+/* ---------- ПАНДА: приглашение к модулю «Первичка» (бегущая строка + план на одобрение) ---------- */
+(function(){
+  var HIDE_KEY = "panda_bar_hide_v1", PLAN_KEY = "panda_plan_v1";
+  try { if (localStorage.getItem(HIDE_KEY)) return; } catch (e) {}
+
+  var MSG_INVITE = "\uD83D\uDC3C Здравствуйте! Я Панда — Ваш помощник. Помогу подготовить первичку из ваших файлов: распознаю документы, рассортирую по разделам, соберу реестр для приёмки. Согласны? Нажмите на меня \uD83D\uDC49";
+  var MSG_OK = "\u2705 План модуля \u00ABПервичка\u00BB утверждён! Начинаем с Фазы 1 — подключение папки и индекс документов.";
+
+  var st = document.createElement("style");
+  st.textContent = [
+    "#panda-bar{position:fixed;left:0;right:0;bottom:0;z-index:5000;height:44px;background:#0f1f3d;color:#fff;display:flex;align-items:center;box-shadow:0 -3px 12px rgba(0,0,0,.35);font:13px/1.4 system-ui,sans-serif}",
+    "#panda-ticker{flex:1;overflow:hidden;position:relative;height:100%;display:flex;align-items:center}",
+    "#panda-track{display:inline-flex;white-space:nowrap;animation:panda-tick 32s linear infinite;will-change:transform}",
+    "#panda-track span{padding-right:60px}",
+    "@keyframes panda-tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}",
+    "#panda-btn{flex:0 0 auto;width:42px;height:42px;border:0;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;animation:panda-hop 1.8s ease-in-out infinite}",
+    "@keyframes panda-hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}",
+    "#panda-close{flex:0 0 auto;width:32px;height:42px;border:0;background:transparent;color:#fff;opacity:.55;font-size:17px;cursor:pointer}",
+    "#panda-close:hover{opacity:1}",
+    "#panda-modal{position:fixed;inset:0;z-index:6000;background:rgba(8,12,26,.62);display:none;align-items:center;justify-content:center;padding:16px}",
+    "#panda-modal.on{display:flex}",
+    "#panda-box{background:#fff;color:#16233f;border-radius:16px;max-width:620px;width:100%;max-height:86vh;overflow:auto;padding:22px 24px;font:14px/1.55 system-ui,sans-serif;box-shadow:0 16px 50px rgba(0,0,0,.4)}",
+    "#panda-box h2{margin:0 0 4px;font-size:19px}",
+    "#panda-box .panda-sub{color:#5a6b8c;font-size:12.5px;margin-bottom:14px}",
+    "#panda-box ul{margin:8px 0;padding-left:20px}",
+    "#panda-box li{margin-bottom:6px}",
+    "#panda-box .panda-phases{background:#f2f6fd;border-radius:10px;padding:10px 14px;margin:12px 0;font-size:13px}",
+    "#panda-box .panda-act{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}",
+    "#panda-box button{border:0;border-radius:10px;padding:11px 18px;font:600 13.5px system-ui,sans-serif;cursor:pointer}",
+    "#panda-yes{background:#21A038;color:#fff}",
+    "#panda-later{background:#e6ebf5;color:#16233f}"
+  ].join("\n");
+  document.head.appendChild(st);
+
+  var bar = document.createElement("div");
+  bar.id = "panda-bar";
+  bar.innerHTML =
+    '<div id="panda-ticker"><div id="panda-track"><span>' + MSG_INVITE + '</span><span>' + MSG_INVITE + '</span></div></div>' +
+    '<button id="panda-btn" title="Открыть план модуля \u00ABПервичка\u00BB" aria-label="Панда — помощник">' +
+    '<svg viewBox="0 0 24 24" width="30" height="30"><circle cx="12" cy="13" r="8.2" fill="#fff"/>' +
+    '<circle cx="5.4" cy="6.6" r="3.1" fill="#222"/><circle cx="18.6" cy="6.6" r="3.1" fill="#222"/>' +
+    '<ellipse cx="8.6" cy="12.4" rx="2.5" ry="3" fill="#222" transform="rotate(-18 8.6 12.4)"/>' +
+    '<ellipse cx="15.4" cy="12.4" rx="2.5" ry="3" fill="#222" transform="rotate(18 15.4 12.4)"/>' +
+    '<circle cx="9" cy="12.6" r="0.9" fill="#fff"/><circle cx="15" cy="12.6" r="0.9" fill="#fff"/>' +
+    '<ellipse cx="12" cy="16.2" rx="1.5" ry="1.1" fill="#222"/></svg></button>' +
+    '<button id="panda-close" title="Скрыть строку">\u00D7</button>';
+  document.body.appendChild(bar);
+
+  var modal = document.createElement("div");
+  modal.id = "panda-modal";
+  modal.innerHTML = '<div id="panda-box">' +
+    '<h2>\uD83D\uDC3C Модуль \u00ABПервичка\u00BB</h2>' +
+    '<div class="panda-sub">Предложение на одобрение \u00B7 интеллектуальная приёмка первичных документов \u00B7 работает на вашем устройстве, офлайн, данные не покидают приложение</div>' +
+    '<ul>' +
+    '<li><b>Одна папка с подпапками</b> — подключаете один раз через системный диалог, доступ сохраняется</li>' +
+    '<li><b>Автоматическое распознавание</b> — текстовый слой PDF/DOCX/XLSX/CSV и OCR для сканов и фото</li>' +
+    '<li><b>Классификация по нормативному перечню</b> — 18 типов первичных документов (402-ФЗ, НК РФ, указания ЦИК): платёжные поручения, счета, акты, договоры, ведомости, выписки, кассовые документы, авансовые отчёты, протоколы комиссий и др.</li>' +
+    '<li><b>Извлечение реквизитов</b> — номер, дата, сумма, ИНН, № УИК/ТИК, отчётный период</li>' +
+    '<li><b>Ничего без вашего утверждения</b> — сначала экран подтверждения с ручной корректировкой каждого файла</li>' +
+    '<li><b>Дедупликация</b> — повторные файлы не попадут в базу дважды</li>' +
+    '<li><b>Журнал приёмки и реестр</b> — след для контрольного органа, выгрузка в Excel</li>' +
+    '</ul>' +
+    '<div class="panda-phases"><b>Этапы:</b> 1) Подключение папки и индекс \u2192 2) Распознавание и реквизиты \u2192 3) Классификация и раскладка по разделам \u2192 4) Журнал и реестр. После каждой фазы — публикация и ваша проверка.</div>' +
+    '<div class="panda-act"><button id="panda-yes">\u2705 Утверждаю план — начать Фазу 1</button><button id="panda-later">Позже</button></div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  function setMsg(t){
+    var track = document.getElementById("panda-track");
+    if (track) track.innerHTML = "<span>" + t + "</span><span>" + t + "</span>";
+  }
+  try { if (localStorage.getItem(PLAN_KEY) === "approved") setMsg(MSG_OK); } catch (e) {}
+
+  document.getElementById("panda-btn").addEventListener("click", function(){ modal.classList.add("on"); });
+  modal.addEventListener("click", function(e){
+    if (e.target === modal || e.target.id === "panda-later") modal.classList.remove("on");
+    if (e.target.id === "panda-yes") {
+      try { localStorage.setItem(PLAN_KEY, "approved"); } catch (err) {}
+      setMsg(MSG_OK);
+      modal.classList.remove("on");
+    }
+  });
+  document.getElementById("panda-close").addEventListener("click", function(){
+    try { localStorage.setItem(HIDE_KEY, "1"); } catch (e) {}
+    bar.remove();
+  });
+})();
