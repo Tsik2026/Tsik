@@ -129,7 +129,7 @@ setInterval(bkRun, 5 * 60 * 1000);
 /* ---------- ПАНДА: приглашение к модулю «Первичка» (в потоке документа, под погодным тикером) ---------- */
 (function(){
   var HIDE_KEY = "panda_bar_hide_v1", PLAN_KEY = "panda_plan_v1";
-  var PVER = "sberpay46";
+  var PVER = "sberpay47";
 
   var MSG_INVITE = "\uD83D\uDC3C Здравствуйте! Я Панда — Ваш помощник. Помогу подготовить первичку из ваших файлов: распознаю документы, рассортирую по разделам, соберу реестр для приёмки. Согласны? Нажмите на меня \uD83D\uDC49";
   var MSG_OK = "\u2705 План модуля \u00ABПервичка\u00BB утверждён! Начинаем с Фазы 1 — подключение папки и индекс документов.";
@@ -146,8 +146,6 @@ setInterval(bkRun, 5 * 60 * 1000);
     "@keyframes panda-tick{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}",
     "#panda-btn{flex:0 0 auto;width:44px;height:44px;border:0;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;animation:panda-hop 1.8s ease-in-out infinite}",
     "@keyframes panda-hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}",
-    "#panda-close{flex:0 0 auto;width:34px;height:44px;border:0;background:transparent;color:#fff;opacity:.55;font-size:17px;cursor:pointer}",
-    "#panda-close:hover{opacity:1}",
     "#panda-modal{position:fixed;inset:0;z-index:6000;background:rgba(8,12,26,.62);display:none;align-items:center;justify-content:center;padding:16px}",
     "#panda-modal.on{display:flex}",
     "#panda-box{background:#fff;color:#16233f;border-radius:16px;max-width:620px;width:100%;max-height:86vh;overflow:auto;padding:22px 24px;font:14px/1.55 system-ui,sans-serif;box-shadow:0 16px 50px rgba(0,0,0,.4)}",
@@ -171,8 +169,7 @@ setInterval(bkRun, 5 * 60 * 1000);
     var msg = planOk ? MSG_OK : MSG_INVITE;
     bar.innerHTML =
       '<div id="panda-ticker"><div id="panda-track"><span>' + msg + '</span><span>' + msg + '</span></div></div>' +
-      '<button id="panda-btn" title="Открыть план модуля «Первичка»">' + PANDA_SVG + '</button>' +
-      '<button id="panda-close" title="Скрыть до следующего обновления">\u00D7</button>';
+      '<button id="panda-btn" title="Открыть план модуля «Первичка»">' + PANDA_SVG + '</button>';
     return bar;
   }
 
@@ -210,10 +207,7 @@ setInterval(bkRun, 5 * 60 * 1000);
         modal.classList.remove("on");
       }
     });
-    bar.querySelector("#panda-close").addEventListener("click", function(){
-      try { localStorage.setItem(HIDE_KEY, PVER); } catch (e) {}
-      bar.remove();
-    });
+    // Крестик закрытия убран по решению пользователя: строка остаётся до запуска модуля «Первичка»
   }
 
   if (hiddenVer === PVER) return; // скрыто до следующего обновления
