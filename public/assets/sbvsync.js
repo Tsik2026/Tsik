@@ -129,7 +129,7 @@ setInterval(bkRun, 5 * 60 * 1000);
 /* ---------- ПАНДА: приглашение к модулю «Первичка» (бегущая строка + план на одобрение) ---------- */
 (function(){
   var HIDE_KEY = "panda_bar_hide_v1", PLAN_KEY = "panda_plan_v1";
-  var PVER = "sberpay44";
+  var PVER = "sberpay45";
   var hiddenVer = null;
   try { hiddenVer = localStorage.getItem(HIDE_KEY); } catch (e) {}
   if (hiddenVer === PVER) {
