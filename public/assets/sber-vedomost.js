@@ -344,7 +344,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay37</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay38</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -473,6 +473,8 @@ const TPL = `
     <button type="button" id="sbv-csv1251" style="font-size:15px;padding:12px 22px">⬇ Выгрузить в Сбербанк</button>
   </div>
   <div class="hint">Файл CSV (Windows-1251) в формате «Ведомость на счета» — готов к импорту: Сбер Бизнес Онлайн → Зарплатный проект → Импорт ведомости.</div>
+  <div class="hint" style="color:#d97706;font-weight:600">⚠️ Не открывайте CSV в Excel для проверки — Excel превращает счёт в число и обрезает до 15 цифр (4,08E+19, нули в конце). Сам файл для банка корректен. Для проверки используйте кнопку «Проверить CSV» или XLSX.</div>
+  <div class="btnrow" style="margin-top:0"><button type="button" class="ghost" id="sbv-csvcheck">Проверить CSV (показать содержимое файла)</button></div>
   <div class="btnrow" style="margin-top:4px">
     <button type="button" class="ghost" id="sbv-csvutf">CSV UTF-8</button>
     <button type="button" class="ghost" id="sbv-xlsx">XLSX</button>
@@ -1378,6 +1380,22 @@ function runCheck(){
     : '<b>Сверка:</b> конфликтов не найдено — ФИО и счета согласованы.';
 }
 
+function previewCsv(){
+  const rows = exportRowsFixed();
+  if (!rows.length){ alert("Ведомость пустая."); return; }
+  const lines = csvText(rows).split("\r\n");
+  let body = '<table class="pview"><tr><td>№</td><td colspan="6">Строка файла (счёт целиком, без обрезки Excel)</td></tr>';
+  lines.slice(0, 41).forEach((ln, i) => {
+    body += `<tr><td>${i + 1}</td><td colspan="6" style="font-family:monospace;font-size:12px">${esc(ln)}</td></tr>`;
+  });
+  if (lines.length > 41) body += `<tr><td>…</td><td colspan="6">и ещё ${lines.length - 41} строк</td></tr>`;
+  body += "</table>";
+  const cnt = rows.length, sum = rows.reduce((a, r) => a + (parseFloat(r.amount) || 0), 0);
+  openViewer("Проверка CSV перед отправкой в банк",
+    `<div class="fileinfo" style="margin-bottom:6px">${cnt} получателей · итого ${sum.toFixed(2)} ₽ · кодировка Windows-1251 · разделитель «;»</div>` + body +
+    `<div class="mact"><button type="button" data-mclose2>Закрыть</button></div>`);
+}
+
 /* ---------- публичный API ---------- */
 /* ---------- сторож версии: обновление без участия пользователя ---------- */
 let watchdogBusy = false;
@@ -1444,13 +1462,15 @@ export function mount(el){
   });
   refreshMergeBtn();
   document.getElementById("sbv-regcheck").onclick = runCheck;
+  const ccBtn = document.getElementById("sbv-csvcheck");
+  if (ccBtn) ccBtn.onclick = previewCsv;
   const fsel = document.getElementById("sbv-formsel");
   fsel.value = activeTemplate();
   fsel.onchange = () => { try { localStorage.setItem(TPL_KEY, fsel.value); } catch(e){} };
   document.getElementById("sbv-regform").onclick = () => downloadControlForm(fsel.value);
   document.getElementById("sbv-regview").onclick = () => previewControlForm(fsel.value);
   document.getElementById("sbv-modal").addEventListener("click", e => {
-    if (e.target.id === "sbv-modal" || e.target.closest("[data-mclose]")) return closeViewer();
+    if (e.target.id === "sbv-modal" || e.target.closest("[data-mclose]") || e.target.closest("[data-mclose2]")) return closeViewer();
     const b1 = e.target.closest("[data-mdl]");
     const b2 = e.target.closest("[data-mshare]");
     const b3 = e.target.closest("[data-medit]");
@@ -1624,7 +1644,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay37";
+  window.__sbvdmV = "sberpay38";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
