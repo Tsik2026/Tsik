@@ -51,7 +51,12 @@ function enc1251(str){
 const digits = v => String(v ?? "").replace(/\D/g, "");
 function normAmount(v){
   if (typeof v === "number" && isFinite(v)) return v.toFixed(2);
-  const s = String(v ?? "").replace(/[\s\u00A0\u202F]/g, "").replace(/руб.*$/i, "").replace(",", ".");
+  let s = String(v ?? "").replace(/[\s\u00A0\u202F]/g, "").replace(/руб.*$/i, "").replace(/[₽]/g, "");
+  if (/[,.]/.test(s) && /[,.].*[,.]/.test(s)) {
+    // Два разделителя: правый — десятичный (12,500.48 → 12500.48 · 12.500,48 → 12500.48)
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else s = s.replace(/,/g, "");
+  } else { s = s.replace(",", "."); }
   const n = parseFloat(s);
   return isFinite(n) ? n.toFixed(2) : "";
 }
@@ -232,7 +237,7 @@ function filterSmartRows(matrix){
     if (!nonEmpty.length) continue;
     const first = String(row[0] ?? "").trim();
     if (/^(итог|всего|сумма|общая|результат)/i.test(first) && nonEmpty.length <= 3){
-      for (const c of nonEmpty){ const n = parseFloat(String(c).replace(/[\s\u00A0]/g, "").replace(",", ".")); if (isFinite(n) && n > 0) totalRow = n; }
+      for (const c of nonEmpty){ const n = parseFloat(normAmount(c)); if (isFinite(n) && n > 0) totalRow = n; }
       continue;
     }
     if (nonEmpty.length === 1 && row.length > 1) continue; // мусорные строки
@@ -344,7 +349,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay47</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay48</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -1598,8 +1603,8 @@ export function mount(el){
       if (f.sci) S.rows[i].__sci = true;
     }
     if (k === "amount" || k === "deduct"){
-      const n = parseFloat(String(e.target.value).replace(",", "."));
-      S.rows[i][k] = isFinite(n) ? String(e.target.value).replace(",", ".") : e.target.value;
+      const fixed = normAmount(e.target.value);
+      S.rows[i][k] = fixed !== "" ? fixed : e.target.value;
     }
     tr.classList.toggle("badrow", rowProblems(S.rows[i]).length > 0);
     updateTotals();
@@ -1610,8 +1615,8 @@ export function mount(el){
     const tr = e.target.closest("tr"); if (!tr) return;
     const i = +tr.dataset.i; if (!S.rows[i]) return;
     if (k === "amount" || k === "deduct"){
-      const n = parseFloat(String(e.target.value).replace(/[\s\u00A0]/g, "").replace(",", "."));
-      if (isFinite(n)){ S.rows[i][k] = n.toFixed(2); e.target.value = (+n.toFixed(2)).toLocaleString("ru-RU", { minimumFractionDigits: 2 }); updateTotals(); }
+      const fixed = normAmount(e.target.value);
+      if (fixed !== ""){ S.rows[i][k] = fixed; e.target.value = (+fixed).toLocaleString("ru-RU", { minimumFractionDigits: 2 }); updateTotals(); }
     }
     if (k === "account"){
       const f = cellFix(e.target.value);
@@ -1655,7 +1660,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay47";
+  window.__sbvdmV = "sberpay48";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
