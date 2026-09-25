@@ -349,7 +349,7 @@ const CSS = `
 .sbv .regmenu button{border:1px solid rgba(128,140,170,.4);background:rgba(128,140,170,.12);color:inherit;border-radius:8px;padding:5px 10px;font-size:12px}`;
 
 const TPL = `
-<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay48</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
+<h2>Ведомость Сбербанк <span style="opacity:.35;font-size:11px;font-weight:400">sberpay49</span> <button type="button" class="ghost" id="sbv-manbtn" style="float:right;padding:5px 12px;font-size:12.5px;font-weight:600">? Инструкция</button></h2>
 <div class="sbv-sub">Реестр для импорта в Сбер Бизнес Онлайн (юрлица) · формат «Ведомость на счета»</div>
 
 <div class="card hide sbv-man" id="sbv-man">
@@ -531,11 +531,11 @@ function updateTotals(){
   const t = totals();
   const el = document.getElementById("sbv-totals");
   if (!S.rows.length){ el.innerHTML = ""; return; }
-  const sum = t.sum.toFixed(2);
   const delta = S.appliedSum ? t.sum - S.appliedSum : 0;
-  el.innerHTML = `Получателей: <b>${t.cnt}</b> из ${S.rows.length} · Итого: <b>${sum} ₽</b>`
+  const ruf = v => (+v).toLocaleString("ru-RU", { minimumFractionDigits: 2 });
+  el.innerHTML = `Получателей: <b>${t.cnt}</b> из ${S.rows.length} · Итого: <b>${ruf(t.sum)} ₽</b>`
     + (t.bad ? ` · <span class="err">ошибок: ${t.bad}</span>` : ` · <span class="ok">готово к выгрузке</span>`)
-    + (S.appliedSum && Math.abs(delta) > 0.005 ? ` · Δ от загруженного: ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ₽` : "");
+    + (S.appliedSum && Math.abs(delta) > 0.005 ? ` · Δ от загруженного: ${delta > 0 ? "+" : ""}${ruf(delta)} ₽` : "");
   ["sbv-csv1251","sbv-csvutf","sbv-xlsx"].forEach(id => document.getElementById(id).disabled = t.bad > 0);
   saveDraft();
 }
@@ -844,7 +844,7 @@ function saveCurrentVed(){
     count: S.rows.length, sum: t.sum.toFixed(2), bad: t.bad };
   const next = ex ? reg.map(e => e.id === ex.id ? entry : e) : [entry, ...reg];
   saveReg(next); renderReg();
-  document.getElementById("sbv-fileinfo").textContent = (ex ? "Запись обновлена" : "Сохранено в реестр") + `: «${name}» · ${entry.count} чел. · ${entry.sum} ₽`;
+  document.getElementById("sbv-fileinfo").textContent = (ex ? "Запись обновлена" : "Сохранено в реестр") + `: «${name}» · ${entry.count} чел. · ${(+entry.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽`;
 }
 function deleteCurrentVed(){
   if (!S.rows.length && !S.fileName){ alert("Нечего удалять."); return; }
@@ -862,7 +862,7 @@ function deleteCurrentVed(){
 
 function copySummary(){
   const t = totals();
-  const txt = `Ведомость Сбербанк: получателей ${t.cnt} из ${S.rows.length}, итого ${t.sum.toFixed(2)} ₽` + (t.bad ? `, ошибок: ${t.bad}` : " — готово к выгрузке");
+  const txt = `Ведомость Сбербанк: получателей ${t.cnt} из ${S.rows.length}, итого ${(+t.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽` + (t.bad ? `, ошибок: ${t.bad}` : " — готово к выгрузке");
   const done = () => { document.getElementById("sbv-fileinfo").textContent = "Итоги скопированы в буфер обмена."; };
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { prompt("Скопируйте вручную:", txt); });
   else prompt("Скопируйте вручную:", txt);
@@ -965,7 +965,7 @@ function fillExpRegSelect(){
   if (!sel) return;
   const cur = sel.value;
   sel.innerHTML = '<option value="0">— выгрузить текущую ведомость (после автораспознавания) —</option>' +
-    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел. · ${e.sum} ₽</option>`).join("");
+    loadReg().map(e => `<option value="${e.id}">${esc(e.name)} · ${e.count} чел. · ${(+e.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽</option>`).join("");
   if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
 }
 function fillUikRegSelect(){
@@ -1106,7 +1106,7 @@ function renderReg(){
   fillTRegSelect();
   fillUregSelect();
   list.innerHTML = reg.map(e => `<div class="regitem" data-id="${e.id}">
-    <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${e.sum} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
+    <div class="regmain"><b>${esc(e.name)}</b><br><span class="regmeta">${esc(e.date)} · ${e.count} чел. · ${(+e.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽${e.bad ? ` · <span class="badge">ошибок: ${e.bad}</span>` : ""}${e.kind === "image" ? " · фото/OCR" : ""}</span></div>
     <div class="regbtns">
       <button type="button" class="ghost" data-view="${e.id}">Открыть</button>
       <button type="button" class="ghost" data-open="${e.id}">Правка</button>
@@ -1272,7 +1272,7 @@ function previewRegEntry(id){
     body += "</table>";
   } else body = "<p>Запись пустая.</p>";
   openViewer(`Просмотр: ${e.name}`,
-    `<div class="fileinfo" style="margin-bottom:6px">${esc(e.date)} · ${rows.length} чел. · итого ${sum.toFixed(2)} ₽${e.bad ? ` · ошибок: ${e.bad}` : ""}</div>` +
+    `<div class="fileinfo" style="margin-bottom:6px">${esc(e.date)} · ${rows.length} чел. · итого ${(+sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽${e.bad ? ` · ошибок: ${e.bad}` : ""}</div>` +
     body +
     `<div class="mact">
       <button type="button" data-mdl="${e.id}">⬇ Скачать XLSX</button>
@@ -1302,7 +1302,7 @@ async function sendRegEntry(id){
   const blob = new Blob([enc1251(csvTextFrom(rows))], { type: "application/csv;charset=windows-1251" });
   const file = new File([blob], `ved_SBER_${nm}.csv`, { type: "application/csv" });
   if (navigator.canShare && navigator.canShare({ files: [file] })){
-    try{ await navigator.share({ files: [file], title: "Ведомость Сбербанк", text: `${rows.length} получателей, итого ${e.sum} ₽ (файл в формате Сбербанк Онлайн)` }); return; }catch(err){ if (err && err.name === "AbortError") return; }
+    try{ await navigator.share({ files: [file], title: "Ведомость Сбербанк", text: `${rows.length} получателей, итого ${(+e.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽ (файл в формате Сбербанк Онлайн)` }); return; }catch(err){ if (err && err.name === "AbortError") return; }
   }
   download(file.name, blob);
   alert("Прямая отправка не поддерживается этим браузером — файл скачан, прикрепите его вручную в мессенджер/почту.");
@@ -1402,7 +1402,7 @@ function previewCsv(){
   const badAcc = rows.filter(r => !/^\d{20}$/.test(String(r.account || "").replace(/[^\d]/g, ""))).length;
   const verdict = badAcc ? `<span style="color:#d33;font-weight:700">⚠ Счёт не 20 цифр у ${badAcc} строк — банк отклонит</span>` : `<span style="color:#2e9e5b;font-weight:700">✓ Все счета ровно 20 цифр — формат корректен</span>`;
   openViewer("Проверка CSV перед отправкой в банк",
-    `<div class="fileinfo" style="margin-bottom:6px">${cnt} получателей · итого ${sum.toFixed(2)} ₽ · кодировка Windows-1251 · разделитель «;» · ${verdict}</div>` + body +
+    `<div class="fileinfo" style="margin-bottom:6px">${cnt} получателей · итого ${(+sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽ · кодировка Windows-1251 · разделитель «;» · ${verdict}</div>` + body +
     `<div class="mact"><button type="button" data-mclose2>Закрыть</button></div>`);
 }
 
@@ -1464,7 +1464,7 @@ export function mount(el){
     if (d){
       const reg0 = loadReg();
       const en0 = reg0.find(x2 => x2.id === +d.dataset.rdel);
-      if (en0 && confirm(`Удалить из реестра «${en0.name}» (${en0.count} чел., ${en0.sum} ₽)?`)){
+      if (en0 && confirm(`Удалить из реестра «${en0.name}» (${en0.count} чел., ${(+en0.sum).toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽)?`)){
         saveReg(reg0.filter(x2 => x2.id !== +d.dataset.rdel));
         renderReg();
       }
@@ -1660,7 +1660,7 @@ export function mount(el){
       { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   };
   if (S.rows.length) renderTable();
-  window.__sbvdmV = "sberpay48";
+  window.__sbvdmV = "sberpay49";
 }
 export function unmount(){ root = null; }
 if (typeof window !== "undefined") window.__sbvdmUnmount = unmount;
